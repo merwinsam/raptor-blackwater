@@ -25,23 +25,32 @@ class IronCondorStrategy:
         """Round to nearest valid NIFTY strike (multiples of 50)"""
         return round(price / self.strike_step) * self.strike_step
 
-    def estimate_premium_from_delta(self, spot: float, strike: float, 
-                                     option_type: str, delta: float, 
+    def estimate_premium_from_delta(self, spot: float, strike: float,
+                                     option_type: str, delta: float,
                                      vix: float = 14.5, dte: int = 14) -> float:
         """
-        Rough premium estimate using Black-Scholes approximation.
-        For paper trading — gives realistic ballpark numbers.
+        Offline premium estimator using BS with NIFTY vol surface.
+        Calibrated to NSE market prices: VIX=14.5, 13 DTE, 6.8% OTM CE → ~₹18.
         """
-        sigma = vix / 100
-        t = dte / 365
-        moneyness = abs(spot - strike) / spot
-        
-        # Simple approximation: OTM premium ≈ intrinsic adjusted by vol
-        vol_premium = spot * sigma * np.sqrt(t) * delta * 1.5
-        
-        # Add small base premium
-        base = max(5, vol_premium)
-        return round(base, 1)
+        import math
+        def _N(x): return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+        CE_M = [1.00,1.10,1.18,1.25,1.30,1.34,1.37,1.38,1.35,1.30,1.25]
+        PE_M = [1.00,1.15,1.25,1.38,1.52,1.68,1.85,2.05,2.28,2.55,2.85]
+        mults = CE_M if option_type == "CE" else PE_M
+        otm_pct = abs(strike - spot) / spot * 100
+        idx = min(int(otm_pct), len(mults) - 2)
+        frac = otm_pct - idx
+        mult = mults[idx] + frac * (mults[min(idx+1, len(mults)-1)] - mults[idx])
+        sigma = (vix * mult) / 100.0
+        T = max(dte / 365.0, 1/365)
+        r = 0.065
+        d1 = (math.log(spot / strike) + (r + 0.5*sigma**2)*T) / (sigma*math.sqrt(T))
+        d2 = d1 - sigma*math.sqrt(T)
+        if option_type == "CE":
+            p = spot*_N(d1) - strike*math.exp(-r*T)*_N(d2)
+        else:
+            p = strike*math.exp(-r*T)*(1-_N(d2)) - spot*(1-_N(d1))
+        return round(max(0.5, p), 1)
 
     def _kite_symbol(self, strike: int, option_type: str, expiry_date) -> str:
         """
@@ -71,11 +80,11 @@ class IronCondorStrategy:
         ce_sell_strike = self.round_to_strike(spot + strike_distance)
         pe_sell_strike = self.round_to_strike(spot - strike_distance)
 
-        # ── Buy strikes (further OTM, ~0.10 delta)
-        # Approximate additional distance for buy legs
-        buy_extra = atr * 0.25  # ~25% more OTM than sell
-        ce_buy_strike = self.round_to_strike(ce_sell_strike + buy_extra)
-        pe_buy_strike = self.round_to_strike(pe_sell_strike - buy_extra)
+        # ── Buy strikes (hedge): fixed 200pts further OTM than sell
+        # 200pt wing matches standard NIFTY spread sizing (per Sensibull/NSE norms)
+        hedge_pts = int(self.params.get("hedge_pts", 200))
+        ce_buy_strike = self.round_to_strike(ce_sell_strike + hedge_pts)
+        pe_buy_strike = self.round_to_strike(pe_sell_strike - hedge_pts)
 
         # ── Get premiums — real from Kite if available, else estimate
         expiry_tmp = self.get_next_week_expiry()["expiry_date_raw"]
@@ -105,11 +114,15 @@ class IronCondorStrategy:
         # ── Max profit = net credit * lot_size
         max_profit = net_credit * self.lot_size
 
-        # ── Max loss per wing = (wing_width - net_credit) * lot_size
-        # Use each wing independently (handles asymmetric condors correctly)
-        max_loss_ce = (ce_wing_width - net_credit) * self.lot_size
-        max_loss_pe = (pe_wing_width - net_credit) * self.lot_size
-        max_loss = max(max_loss_ce, max_loss_pe)  # worst case wing
+        # ── Max loss per wing — use per-wing NC (not total condor NC)
+        # Iron Condor max loss = worst wing: (wing_width - that_wing_NC) × lot_size
+        # CE wing NC = ce_sell_prem - ce_buy_prem
+        # PE wing NC = pe_sell_prem - pe_buy_prem
+        ce_wing_nc   = ce_sell_prem - ce_buy_prem
+        pe_wing_nc   = pe_sell_prem - pe_buy_prem
+        max_loss_ce  = (ce_wing_width - ce_wing_nc) * self.lot_size
+        max_loss_pe  = (pe_wing_width - pe_wing_nc) * self.lot_size
+        max_loss     = max(max_loss_ce, max_loss_pe)
 
         # ── Breakevens
         breakeven_upper = ce_sell_strike + net_credit
@@ -223,26 +236,20 @@ class IronCondorStrategy:
 
     def get_next_week_expiry(self) -> dict:
         """
-        Get the NEXT week's Tuesday expiry (NIFTY weekly).
-        NIFTY 50 weekly options changed to Tuesday expiry from Sept 2025.
-        Always picks NEXT week's Tuesday, not the current week.
+        Get appropriate weekly Tuesday expiry with ≥ 3 DTE.
+        NIFTY 50 weekly options expire on Tuesday (from Sept 2025).
+        Skips current week if expiry is too close (< 3 DTE).
         """
-        today = date.today()
-        # Tuesday = weekday 1
+        today           = date.today()
         days_to_tuesday = (1 - today.weekday()) % 7
-        this_tuesday = today + timedelta(days=days_to_tuesday)
-
-        # Always go to NEXT week's Tuesday
-        if days_to_tuesday == 0:
-            next_tuesday = this_tuesday + timedelta(weeks=1)
-        else:
-            next_tuesday = this_tuesday + timedelta(weeks=1)
-
-        dte = (next_tuesday - today).days
-
+        this_tuesday    = today + timedelta(days=days_to_tuesday)
+        # Skip if this week's expiry is too soon (< 3 DTE)
+        if (this_tuesday - today).days < 3:
+            this_tuesday += timedelta(weeks=1)
+        dte = (this_tuesday - today).days
         return {
-            "expiry_date": next_tuesday.strftime("%d %b %Y"),
-            "expiry_date_raw": next_tuesday,
-            "dte": dte,
-            "week": "NEXT",
+            "expiry_date":     this_tuesday.strftime("%d %b %Y"),
+            "expiry_date_raw": this_tuesday,
+            "dte":             dte,
+            "week":            "NEXT",
         }
