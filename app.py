@@ -4,7 +4,6 @@ Professional Trading Dashboard | Zerodha Kite Connect
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
@@ -496,68 +495,7 @@ init_session()
 # Force lot_size to config value — overrides stale cached values from old sessions
 st.session_state.lot_size = config.NIFTY_LOT_SIZE
 
-# ── Sidebar open button — works on Streamlit Cloud via parent DOM access ───────
-components.html("""
-<style>
-  #sb-btn {
-    position: fixed;
-    top: 50vh;
-    left: 0;
-    transform: translateY(-50%);
-    z-index: 9999999;
-    width: 24px;
-    height: 64px;
-    background: #1D4ED8;
-    border: none;
-    border-radius: 0 10px 10px 0;
-    cursor: pointer;
-    color: white;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 3px 0 10px rgba(0,0,0,0.5);
-    transition: width 0.15s;
-  }
-  #sb-btn:hover { width: 30px; background: #2563EB; }
-</style>
-<button id="sb-btn" title="Open sidebar">&#9776;</button>
-<script>
-  document.getElementById('sb-btn').addEventListener('click', function() {
-    // Try multiple selectors across Streamlit versions
-    const selectors = [
-      '[data-testid="collapsedControl"]',
-      'button[aria-label="Open sidebar"]',
-      'button[aria-label="open sidebar"]',
-      '[data-testid="stSidebarCollapsedControl"]',
-      'section[data-testid="stSidebar"] + div button',
-    ];
-    let clicked = false;
-    for (const sel of selectors) {
-      const btn = window.parent.document.querySelector(sel);
-      if (btn) { btn.click(); clicked = true; break; }
-    }
-    if (!clicked) {
-      // Last resort: find any button near left edge
-      const btns = window.parent.document.querySelectorAll('button');
-      for (const b of btns) {
-        const r = b.getBoundingClientRect();
-        if (r.left < 40 && r.width < 60) { b.click(); break; }
-      }
-    }
-  });
 
-  // Hide this button when sidebar is already open
-  function checkState() {
-    const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-    const btn = document.getElementById('sb-btn');
-    if (!sidebar || !btn) return;
-    const isOpen = sidebar.offsetWidth > 50;
-    btn.style.display = isOpen ? 'none' : 'flex';
-  }
-  setInterval(checkState, 400);
-</script>
-""", height=0, scrolling=False)
 
 # ── Auto-load token + session on startup ──────────────────────────────────────
 if not st.session_state.get("_startup_done"):
@@ -636,8 +574,8 @@ def should_auto_execute():
     ran_today = st.session_state.last_execution_date == ist_today
     return w_start <= ist_now <= w_end and not ran_today
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
-with st.sidebar:
+# ── Settings expander ─────────────────────────────────────────────────────────
+with st.expander("⚙  Settings", expanded=st.session_state.get('settings_open', True)):
     st.markdown('<p class="panel-title">Connection</p>', unsafe_allow_html=True)
     api_key      = st.text_input("API Key",      value=config.API_KEY,  type="password")
     access_token = st.text_input("Access Token", type="password")
