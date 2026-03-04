@@ -574,156 +574,6 @@ def should_auto_execute():
     ran_today = st.session_state.last_execution_date == ist_today
     return w_start <= ist_now <= w_end and not ran_today
 
-# ── Settings expander ─────────────────────────────────────────────────────────
-with st.expander("⚙  Settings", expanded=st.session_state.get('settings_open', True)):
-    st.markdown('<p class="panel-title">Connection</p>', unsafe_allow_html=True)
-    api_key      = st.text_input("API Key",      value=config.API_KEY,  type="password")
-    access_token = st.text_input("Access Token", type="password")
-
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        if st.button("Connect", use_container_width=True):
-            with st.spinner(""):
-                try:
-                    client = KiteClient(api_key, access_token, paper_mode=st.session_state.paper_mode)
-                    result = client.test_connection()
-                    st.session_state.kite_connected = result["success"]
-                    st.session_state.kite_client = client
-                    if result["success"]:
-                        # Save token to disk for auto-load tomorrow
-                        save_token(api_key, access_token)
-                        # Auto-fetch live spot and VIX on connect
-                        try:
-                            st.session_state.spot_price = client.get_nifty_spot()
-                            st.session_state.vix        = client.get_india_vix()
-                        except Exception:
-                            pass
-                    else:
-                        st.error(result["message"])
-                except Exception as e:
-                    client = KiteClient(api_key, access_token, paper_mode=True)
-                    st.session_state.kite_client = client
-                    st.session_state.kite_connected = True
-    with col2:
-        if st.session_state.kite_connected:
-            st.markdown('<span class="status-dot dot-green"></span>On',  unsafe_allow_html=True)
-        else:
-            st.markdown('<span class="status-dot dot-gray"></span>Off', unsafe_allow_html=True)
-
-    st.divider()
-    st.markdown('<p class="panel-title">Mode</p>', unsafe_allow_html=True)
-    paper_mode = st.toggle("Paper Trading", value=True)
-    st.session_state.paper_mode = paper_mode
-
-    st.divider()
-    st.markdown('<p class="panel-title">Account</p>', unsafe_allow_html=True)
-    account_size   = st.number_input("Size (₹)", value=st.session_state.account_size,
-                                      min_value=100000, max_value=50000000, step=100000)
-    st.session_state.account_size = account_size
-    max_loss_pct   = st.slider("Max Loss %",    1.0, 10.0, 5.0, 0.5)
-    daily_kill_pct = st.slider("Daily Kill %",  0.5,  5.0, 2.0, 0.5)
-    max_loss_amt   = account_size * max_loss_pct / 100
-
-    st.divider()
-    st.markdown('<p class="panel-title">Strategy</p>', unsafe_allow_html=True)
-
-    strike_mode = st.radio(
-        "Strike Selection Mode",
-        ["Delta", "ATR"],
-        horizontal=True,
-        help="Delta: pick strikes by target delta from live chain. ATR: sell at 1×ATR, hedge 200pts further OTM.",
-    )
-    st.session_state.strike_mode = strike_mode
-
-    atr_multiplier = st.number_input("ATR Multiplier",    value=1.25 if strike_mode == "ATR" else 1.2,
-                                      min_value=0.5, max_value=3.0, step=0.05,
-                                      help="ATR mode: sell strike = spot ± ATR × multiplier")
-    if strike_mode == "Delta":
-        sell_delta = st.number_input("Sell Delta", value=0.15, min_value=0.05, max_value=0.30, step=0.01)
-        buy_delta  = st.number_input("Buy Delta",  value=0.10, min_value=0.03, max_value=0.20, step=0.01)
-        hedge_pts  = None
-    else:
-        sell_delta = 0.15   # unused in ATR mode but kept for fallback
-        buy_delta  = 0.10
-        hedge_pts  = st.number_input("Hedge Distance (pts)", value=200, min_value=50, max_value=500, step=50,
-                                      help="ATR mode: buy (hedge) strike is this many points further OTM from sell strike")
-    sl_pct         = st.number_input("SL % of Premium",  value=50,   min_value=20,   max_value=100,  step=5)
-    dte_target     = st.number_input("Target DTE",        value=14,   min_value=7,    max_value=30,   step=1)
-    lot_size       = st.number_input("Lot Size",          value=config.NIFTY_LOT_SIZE, min_value=1, max_value=500, step=1,
-                                      help="NIFTY lot size (NSE: 75 from Feb 2025). P&L = (price diff) × lots × lot size")
-    st.session_state.lot_size = lot_size
-
-    st.divider()
-    st.markdown('<p class="panel-title">Schedule</p>', unsafe_allow_html=True)
-    exec_time = st.text_input("Entry Time (HH:MM)", value="09:45")
-    st.session_state.execution_time = exec_time
-    exit_dte  = st.number_input("Exit Days Before Expiry", value=4, min_value=1, max_value=10, step=1)
-    st.session_state.exit_days_before_expiry = exit_dte
-    auto_lots = st.number_input("Auto Lots", value=1, min_value=1, max_value=20, step=1,
-                                 help="Number of lots for auto-execute at scheduled time")
-    st.session_state.auto_lots = auto_lots
-    auto_arm  = st.toggle("Arm Auto-Execute", value=False)
-    st.session_state.auto_execute_armed = auto_arm
-
-    st.divider()
-    st.markdown('<div class="kill-btn">', unsafe_allow_html=True)
-    if st.button("KILL SWITCH", use_container_width=True):
-        st.session_state.kill_switch = True
-        st.session_state.strategy_active = False
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.divider()
-    st.markdown('<p class="panel-title">Session</p>', unsafe_allow_html=True)
-    if st.button("New Session", use_container_width=True, help="Clear all positions, P&L and trade log for a fresh start"):
-        # Overwrite disk files with blank data (works on Streamlit Cloud)
-        try:
-            import json
-            from pathlib import Path
-            from datetime import timezone, timedelta
-            IST = timezone(timedelta(hours=5, minutes=30))
-            today_ist = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
-            logs_dir = Path("logs")
-            logs_dir.mkdir(exist_ok=True)
-            # Overwrite today's session with empty data
-            blank_session = {"date": today_ist, "saved_at": "", "daily_pnl": 0.0, "positions": [], "trade_log": []}
-            with open(logs_dir / f"{today_ist}_session.json", "w") as f:
-                json.dump(blank_session, f)
-            # Overwrite pnl history with empty list
-            with open(logs_dir / "pnl_history.json", "w") as f:
-                json.dump([], f)
-            # Also wipe any older session files
-            for old_f in logs_dir.glob("*_session.json"):
-                if old_f.name != f"{today_ist}_session.json":
-                    old_f.unlink(missing_ok=True)
-        except Exception:
-            pass
-        # Wipe all in-memory state
-        keys_to_clear = [
-            "positions", "trade_log", "daily_pnl", "total_pnl",
-            "mtm_history", "strategy_active", "kill_switch",
-            "last_execution_date", "_startup_done"
-        ]
-        for k in keys_to_clear:
-            if k in st.session_state:
-                del st.session_state[k]
-        st.session_state.session_cleared = True
-        st.success("Session cleared — fresh start.")
-        st.rerun()
-
-    st.session_state.strategy_params = {
-        "atr_multiplier": atr_multiplier,
-        "sell_delta":     sell_delta,
-        "buy_delta":      buy_delta,
-        "sl_pct":         sl_pct / 100,
-        "dte_target":     dte_target,
-        "max_loss_pct":   max_loss_pct / 100,
-        "max_loss_amt":   max_loss_amt,
-        "daily_kill_pct": daily_kill_pct / 100,
-        "account_size":   account_size,
-        "lot_size":       lot_size,
-        "strike_mode":    strike_mode,
-        "hedge_pts":      hedge_pts if hedge_pts else 200,
-    }
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 mode_label = "PAPER" if st.session_state.paper_mode else "LIVE"
@@ -891,7 +741,7 @@ for pos in st.session_state.positions:
                 save_session(st.session_state.positions, st.session_state.trade_log, st.session_state.daily_pnl)
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs(["OVERVIEW", "STRATEGY", "POSITIONS", "LOG"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["OVERVIEW", "STRATEGY", "POSITIONS", "LOG", "SETTINGS"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # OVERVIEW
@@ -1662,3 +1512,154 @@ st.markdown(f"""
     <span class="text-muted">{'PAPER' if st.session_state.paper_mode else 'LIVE'} · {datetime.now().strftime('%H:%M:%S')}</span>
 </div>
 """, unsafe_allow_html=True)
+
+# ── Settings tab ──────────────────────────────────────────────────────────────
+with tab5:
+    st.markdown('<p class="panel-title">Connection</p>', unsafe_allow_html=True)
+    api_key      = st.text_input("API Key",      value=config.API_KEY,  type="password")
+    access_token = st.text_input("Access Token", type="password")
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        if st.button("Connect", use_container_width=True):
+            with st.spinner(""):
+                try:
+                    client = KiteClient(api_key, access_token, paper_mode=st.session_state.paper_mode)
+                    result = client.test_connection()
+                    st.session_state.kite_connected = result["success"]
+                    st.session_state.kite_client = client
+                    if result["success"]:
+                        # Save token to disk for auto-load tomorrow
+                        save_token(api_key, access_token)
+                        # Auto-fetch live spot and VIX on connect
+                        try:
+                            st.session_state.spot_price = client.get_nifty_spot()
+                            st.session_state.vix        = client.get_india_vix()
+                        except Exception:
+                            pass
+                    else:
+                        st.error(result["message"])
+                except Exception as e:
+                    client = KiteClient(api_key, access_token, paper_mode=True)
+                    st.session_state.kite_client = client
+                    st.session_state.kite_connected = True
+    with col2:
+        if st.session_state.kite_connected:
+            st.markdown('<span class="status-dot dot-green"></span>On',  unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="status-dot dot-gray"></span>Off', unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown('<p class="panel-title">Mode</p>', unsafe_allow_html=True)
+    paper_mode = st.toggle("Paper Trading", value=True)
+    st.session_state.paper_mode = paper_mode
+
+    st.divider()
+    st.markdown('<p class="panel-title">Account</p>', unsafe_allow_html=True)
+    account_size   = st.number_input("Size (₹)", value=st.session_state.account_size,
+                                      min_value=100000, max_value=50000000, step=100000)
+    st.session_state.account_size = account_size
+    max_loss_pct   = st.slider("Max Loss %",    1.0, 10.0, 5.0, 0.5)
+    daily_kill_pct = st.slider("Daily Kill %",  0.5,  5.0, 2.0, 0.5)
+    max_loss_amt   = account_size * max_loss_pct / 100
+
+    st.divider()
+    st.markdown('<p class="panel-title">Strategy</p>', unsafe_allow_html=True)
+
+    strike_mode = st.radio(
+        "Strike Selection Mode",
+        ["Delta", "ATR"],
+        horizontal=True,
+        help="Delta: pick strikes by target delta from live chain. ATR: sell at 1×ATR, hedge 200pts further OTM.",
+    )
+    st.session_state.strike_mode = strike_mode
+
+    atr_multiplier = st.number_input("ATR Multiplier",    value=1.25 if strike_mode == "ATR" else 1.2,
+                                      min_value=0.5, max_value=3.0, step=0.05,
+                                      help="ATR mode: sell strike = spot ± ATR × multiplier")
+    if strike_mode == "Delta":
+        sell_delta = st.number_input("Sell Delta", value=0.15, min_value=0.05, max_value=0.30, step=0.01)
+        buy_delta  = st.number_input("Buy Delta",  value=0.10, min_value=0.03, max_value=0.20, step=0.01)
+        hedge_pts  = None
+    else:
+        sell_delta = 0.15   # unused in ATR mode but kept for fallback
+        buy_delta  = 0.10
+        hedge_pts  = st.number_input("Hedge Distance (pts)", value=200, min_value=50, max_value=500, step=50,
+                                      help="ATR mode: buy (hedge) strike is this many points further OTM from sell strike")
+    sl_pct         = st.number_input("SL % of Premium",  value=50,   min_value=20,   max_value=100,  step=5)
+    dte_target     = st.number_input("Target DTE",        value=14,   min_value=7,    max_value=30,   step=1)
+    lot_size       = st.number_input("Lot Size",          value=config.NIFTY_LOT_SIZE, min_value=1, max_value=500, step=1,
+                                      help="NIFTY lot size (NSE: 75 from Feb 2025). P&L = (price diff) × lots × lot size")
+    st.session_state.lot_size = lot_size
+
+    st.divider()
+    st.markdown('<p class="panel-title">Schedule</p>', unsafe_allow_html=True)
+    exec_time = st.text_input("Entry Time (HH:MM)", value="09:45")
+    st.session_state.execution_time = exec_time
+    exit_dte  = st.number_input("Exit Days Before Expiry", value=4, min_value=1, max_value=10, step=1)
+    st.session_state.exit_days_before_expiry = exit_dte
+    auto_lots = st.number_input("Auto Lots", value=1, min_value=1, max_value=20, step=1,
+                                 help="Number of lots for auto-execute at scheduled time")
+    st.session_state.auto_lots = auto_lots
+    auto_arm  = st.toggle("Arm Auto-Execute", value=False)
+    st.session_state.auto_execute_armed = auto_arm
+
+    st.divider()
+    st.markdown('<div class="kill-btn">', unsafe_allow_html=True)
+    if st.button("KILL SWITCH", use_container_width=True):
+        st.session_state.kill_switch = True
+        st.session_state.strategy_active = False
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown('<p class="panel-title">Session</p>', unsafe_allow_html=True)
+    if st.button("New Session", use_container_width=True, help="Clear all positions, P&L and trade log for a fresh start"):
+        # Overwrite disk files with blank data (works on Streamlit Cloud)
+        try:
+            import json
+            from pathlib import Path
+            from datetime import timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            today_ist = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+            logs_dir = Path("logs")
+            logs_dir.mkdir(exist_ok=True)
+            # Overwrite today's session with empty data
+            blank_session = {"date": today_ist, "saved_at": "", "daily_pnl": 0.0, "positions": [], "trade_log": []}
+            with open(logs_dir / f"{today_ist}_session.json", "w") as f:
+                json.dump(blank_session, f)
+            # Overwrite pnl history with empty list
+            with open(logs_dir / "pnl_history.json", "w") as f:
+                json.dump([], f)
+            # Also wipe any older session files
+            for old_f in logs_dir.glob("*_session.json"):
+                if old_f.name != f"{today_ist}_session.json":
+                    old_f.unlink(missing_ok=True)
+        except Exception:
+            pass
+        # Wipe all in-memory state
+        keys_to_clear = [
+            "positions", "trade_log", "daily_pnl", "total_pnl",
+            "mtm_history", "strategy_active", "kill_switch",
+            "last_execution_date", "_startup_done"
+        ]
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.session_state.session_cleared = True
+        st.success("Session cleared — fresh start.")
+        st.rerun()
+
+    st.session_state.strategy_params = {
+        "atr_multiplier": atr_multiplier,
+        "sell_delta":     sell_delta,
+        "buy_delta":      buy_delta,
+        "sl_pct":         sl_pct / 100,
+        "dte_target":     dte_target,
+        "max_loss_pct":   max_loss_pct / 100,
+        "max_loss_amt":   max_loss_amt,
+        "daily_kill_pct": daily_kill_pct / 100,
+        "account_size":   account_size,
+        "lot_size":       lot_size,
+        "strike_mode":    strike_mode,
+        "hedge_pts":      hedge_pts if hedge_pts else 200,
+    }
