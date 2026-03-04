@@ -297,11 +297,11 @@ class OptionChainScanner:
         return {
             "legs":              legs,
             "net_credit":        round(nc, 2),
-            "max_profit":        round(nc * ls, 0),   # 1-lot base; app.py × lots
-            "max_loss":          round((max(ce_wing, pe_wing) - nc) * ls, 0),
+            "max_profit":        round(mp, 0),    # 1-lot base; app.py × lots
+            "max_loss":          round(ml, 0),    # worst-case wing; app.py × lots
             "breakeven_upper":   round(be_u, 0),
             "breakeven_lower":   round(be_d, 0),
-            "margin_required":   round(max(ce_wing, pe_wing) * ls, 0),
+            "margin_required":   round(max(ce_wing, pe_wing) * ls, 0),  # per lot
             "spot_at_entry":     spot,
             "atr":               0,
             "strike_distance":   round(ce_sell["strike"] - spot, 0),
