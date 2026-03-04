@@ -34,7 +34,7 @@ DTE_TARGET        = 14
 EXPIRY_WEEK       = "NEXT"
 
 # ─── NIFTY ────────────────────────────────────
-NIFTY_LOT_SIZE    = 75  # Updated Nov 2024 — NSE revised NIFTY lot size
+NIFTY_LOT_SIZE    = 65  # Sensibull-confirmed lot size for current weekly series
 NIFTY_STRIKE_STEP = 50
 SYMBOL            = "NIFTY"
 

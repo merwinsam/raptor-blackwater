@@ -10,6 +10,7 @@ from datetime import datetime, date, timedelta
 import plotly.graph_objects as go
 
 from strategy.iron_condor import IronCondorStrategy
+from strategy.spreads import BearCallSpread, BullPutSpread
 from strategy.atr_model import ATRModel
 from risk.risk_engine import RiskEngine
 from execution.order_engine import OrderEngine
@@ -992,8 +993,20 @@ with tab2:
     vix     = st.session_state.vix
     atr     = atr_mdl.compute_atr_from_vix(spot, vix)
     st.session_state.atr = atr
-    # Inject sidebar lot_size into params so IronCondorStrategy uses it
     params["lot_size"] = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+
+    # ── Strategy Selector ─────────────────────────────────────────────────────
+    st.markdown('<p class="panel-title">Strategy</p>', unsafe_allow_html=True)
+    strategy_type = st.radio(
+        "Select strategy",
+        ["Bear Call Spread", "Bull Put Spread", "Iron Condor"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="strategy_type_radio",
+    )
+    st.session_state.strategy_type = strategy_type
+    st.divider()
+
     strat = IronCondorStrategy(params)
 
     # ── Option Chain Scanner ──────────────────────────────────────────────────
@@ -1048,17 +1061,12 @@ with tab2:
                 st.warning(f"Chain scan failed — using ATR model. ({e})")
                 st.session_state._scanned_condor = None
 
-    # Use scanned condor if available, else fall back to ATR model
-    if st.session_state.get("_scanned_condor") and not scan_error:
-        condor = st.session_state._scanned_condor
-        expiry_raw = condor["scan_meta"]["expiry_date_raw"]
-        expiry = {
-            "expiry_date":     condor["scan_meta"]["expiry"],
-            "expiry_date_raw": expiry_raw,
-            "dte":             condor["scan_meta"]["dte"],
-            "week":            "NEXT",
-        }
-        # Show chain scan badge
+    # ── Build strategy from scan or ATR model ────────────────────────────────
+    scanned      = st.session_state.get("_scanned_condor") if not scan_error else None
+    current_lot_size = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+
+    if scanned:
+        # Show live chain badge
         st.markdown("""
         <div style="display:inline-flex;align-items:center;gap:6px;
                     background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);
@@ -1071,35 +1079,75 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
 
-        # Show delta confirmation table
-        meta = condor["scan_meta"]
-        chain_rows = [
-            {"Leg": "CE SELL", "Strike": meta["ce_sell"]["strike"],
-             "Delta": f"{meta['ce_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['ce_sell']['ltp']:.1f}"},
-            {"Leg": "CE BUY",  "Strike": meta["ce_buy"]["strike"],
-             "Delta": f"{meta['ce_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['ce_buy']['ltp']:.1f}"},
-            {"Leg": "PE SELL", "Strike": meta["pe_sell"]["strike"],
-             "Delta": f"{meta['pe_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['pe_sell']['ltp']:.1f}"},
-            {"Leg": "PE BUY",  "Strike": meta["pe_buy"]["strike"],
-             "Delta": f"{meta['pe_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['pe_buy']['ltp']:.1f}"},
-        ]
-        st.dataframe(
-            __import__("pandas").DataFrame(chain_rows),
-            use_container_width=True,
-            hide_index=True,
-            height=178,
-        )
-    else:
-        condor = strat.build_condor(spot, atr, vix, kite_client=kite_client_ref)
-        expiry = strat.get_next_week_expiry()
+        # Delta confirmation table — filter rows by strategy
+        meta = scanned["scan_meta"]
+        if strategy_type == "Bear Call Spread":
+            chain_rows = [
+                {"Leg": "CE SELL", "Strike": meta["ce_sell"]["strike"],
+                 "Delta": f"{meta['ce_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['ce_sell']['ltp']:.1f}"},
+                {"Leg": "CE BUY",  "Strike": meta["ce_buy"]["strike"],
+                 "Delta": f"{meta['ce_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['ce_buy']['ltp']:.1f}"},
+            ]
+        elif strategy_type == "Bull Put Spread":
+            chain_rows = [
+                {"Leg": "PE SELL", "Strike": meta["pe_sell"]["strike"],
+                 "Delta": f"{meta['pe_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['pe_sell']['ltp']:.1f}"},
+                {"Leg": "PE BUY",  "Strike": meta["pe_buy"]["strike"],
+                 "Delta": f"{meta['pe_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['pe_buy']['ltp']:.1f}"},
+            ]
+        else:
+            chain_rows = [
+                {"Leg": "CE SELL", "Strike": meta["ce_sell"]["strike"],
+                 "Delta": f"{meta['ce_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['ce_sell']['ltp']:.1f}"},
+                {"Leg": "CE BUY",  "Strike": meta["ce_buy"]["strike"],
+                 "Delta": f"{meta['ce_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['ce_buy']['ltp']:.1f}"},
+                {"Leg": "PE SELL", "Strike": meta["pe_sell"]["strike"],
+                 "Delta": f"{meta['pe_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['pe_sell']['ltp']:.1f}"},
+                {"Leg": "PE BUY",  "Strike": meta["pe_buy"]["strike"],
+                 "Delta": f"{meta['pe_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['pe_buy']['ltp']:.1f}"},
+            ]
+        st.dataframe(pd.DataFrame(chain_rows), use_container_width=True,
+                     hide_index=True, height=140 if strategy_type != "Iron Condor" else 178)
+
+    # ── Instantiate strategy ──────────────────────────────────────────────────
+    if strategy_type == "Bear Call Spread":
+        spread_obj = BearCallSpread(params)
+        trade      = spread_obj.build(spot, atr, vix,
+                                      kite_client=kite_client_ref,
+                                      chain_data=scanned)
+        expiry     = {"expiry_date": trade["legs"][0]["symbol"][5:12] if scanned else strat.get_next_week_expiry()["expiry_date"],
+                      "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"] if scanned else strat.get_next_week_expiry()["expiry_date_raw"],
+                      "dte": scanned["scan_meta"]["dte"] if scanned else strat.get_next_week_expiry()["dte"]}
+        payoff_fn  = spread_obj.compute_payoff
+
+    elif strategy_type == "Bull Put Spread":
+        spread_obj = BullPutSpread(params)
+        trade      = spread_obj.build(spot, atr, vix,
+                                      kite_client=kite_client_ref,
+                                      chain_data=scanned)
+        expiry     = {"expiry_date": strat.get_next_week_expiry()["expiry_date"],
+                      "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"] if scanned else strat.get_next_week_expiry()["expiry_date_raw"],
+                      "dte": scanned["scan_meta"]["dte"] if scanned else strat.get_next_week_expiry()["dte"]}
+        payoff_fn  = spread_obj.compute_payoff
+
+    else:  # Iron Condor
+        if scanned:
+            trade  = scanned
+            expiry = {"expiry_date":     scanned["scan_meta"]["expiry"],
+                      "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"],
+                      "dte":             scanned["scan_meta"]["dte"]}
+        else:
+            trade  = strat.build_condor(spot, atr, vix, kite_client=kite_client_ref)
+            expiry = strat.get_next_week_expiry()
+        payoff_fn = strat.compute_payoff
 
     st.divider()
 
     col_l, col_r = st.columns([3, 2])
 
     with col_l:
-        strikes = np.arange(spot - 1500, spot + 1500, 25)
-        payoff  = strat.compute_payoff(strikes, condor)
+        strikes = np.arange(spot - 2000, spot + 2000, 25)
+        payoff  = payoff_fn(strikes, trade)
 
         fig2 = go.Figure()
         pm = payoff >= 0
@@ -1118,7 +1166,7 @@ with tab2:
         fig2.add_vline(x=spot, line=dict(color="#4A5568", width=1, dash="dot"),
                        annotation_text=f"  {spot:,.0f}",
                        annotation_font=dict(color="#8A9BB0", size=10))
-        for leg in condor["legs"]:
+        for leg in trade["legs"]:
             c = "#EF4444" if leg["action"] == "SELL" else "#3B82F6"
             fig2.add_vline(x=leg["strike"], line=dict(color=c, width=1, dash="dot"), opacity=0.5)
         fig2.add_hline(y=0, line=dict(color="#1C2530", width=1))
@@ -1126,7 +1174,7 @@ with tab2:
             template="plotly_dark",
             paper_bgcolor="#0C1117", plot_bgcolor="#0C1117",
             height=260, margin=dict(l=0, r=0, t=30, b=0), showlegend=False,
-            title=dict(text="Payoff at Expiry",
+            title=dict(text=f"Payoff at Expiry — {strategy_type}",
                        font=dict(family="IBM Plex Mono", size=11, color="#4A5568"), x=0),
             xaxis=dict(showgrid=False,
                        tickfont=dict(family="IBM Plex Mono", size=10, color="#4A5568")),
@@ -1138,7 +1186,7 @@ with tab2:
 
         st.markdown('<p class="panel-title">Legs</p>', unsafe_allow_html=True)
         rows = []
-        for leg in condor["legs"]:
+        for leg in trade["legs"]:
             rows.append({
                 "Instrument": leg["symbol"],
                 "Side":       leg["action"],
@@ -1151,48 +1199,70 @@ with tab2:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=175)
 
     with col_r:
-        nc   = condor.get("net_credit", 0)
-        mp   = condor.get("max_profit", 0)
-        ml   = condor.get("max_loss", 0)
-        be_u = condor.get("breakeven_upper", 0)
-        be_d = condor.get("breakeven_lower", 0)
-        dist = atr * params.get("atr_multiplier", 1.2)
-        current_lot_size = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+        nc   = trade.get("net_credit", 0)
+        mp   = trade.get("max_profit", 0)
+        ml   = trade.get("max_loss",   0)
+        be_u = trade.get("breakeven_upper", 0)
+        be_d = trade.get("breakeven_lower", 0)
+        wing = trade.get("wing_width", 0)
+        mpl  = trade.get("margin_per_lot", wing * current_lot_size if wing else 0)
 
-        # Lots input FIRST so summary can multiply correctly
         if not st.session_state.kill_switch:
             lots = st.number_input("Lots", value=1, min_value=1, max_value=20)
         else:
             lots = 1
 
-        # condor values:
-        #   nc  = net credit per unit (premium points)
-        #   mp  = max profit for 1 lot  (nc × lot_size)
-        #   ml  = max loss   for 1 lot  (wing_width - nc) × lot_size
-        # Scale to actual lots selected
-        nc_total = nc * lots * current_lot_size   # total rupee credit collected
-        mp_total = mp * lots                       # mp already has lot_size baked in
-        ml_total = ml * lots                       # same
-        margin   = condor.get("margin_required", 75000) * lots
+        mp_total  = mp * lots
+        ml_total  = ml * lots
+        margin_total = mpl * lots
+
+        # ── Summary panel ─────────────────────────────────────────────────────
+        # Strategy-specific breakeven display
+        if strategy_type == "Bear Call Spread":
+            be_html = f'''
+            <div class="leg-row"><span class="text-muted">BREAKEVEN</span>
+                <span class="mono">{be_u:,.0f}</span></div>'''
+            profit_range_html = ""
+        elif strategy_type == "Bull Put Spread":
+            be_html = f'''
+            <div class="leg-row"><span class="text-muted">BREAKEVEN</span>
+                <span class="mono">{be_d:,.0f}</span></div>'''
+            profit_range_html = ""
+        else:
+            be_html = f'''
+            <div class="leg-row"><span class="text-muted">BREAKEVEN UP</span>
+                <span class="mono">{be_u:,.0f}</span></div>
+            <div class="leg-row"><span class="text-muted">BREAKEVEN DN</span>
+                <span class="mono">{be_d:,.0f}</span></div>'''
+            profit_range_html = f'''
+            <div class="leg-row"><span class="text-muted">PROFIT RANGE</span>
+                <span class="mono">{be_u - be_d:,.0f} pts</span></div>'''
+
+        rr = f"{ml_total/mp_total:.1f}x" if mp_total else "—"
 
         st.markdown(f"""
         <div class="panel">
-            <div class="panel-title">Summary · {lots} lot{"s" if lots > 1 else ""} × {current_lot_size}</div>
+            <div class="panel-title">{strategy_type} · {lots} lot{"s" if lots > 1 else ""} × {current_lot_size}</div>
             <div class="leg-row"><span class="text-muted">NET CREDIT</span>
                 <span class="mono" style="color:#22C55E">₹{nc:.1f}/unit
-                <span style="color:#4A5568;font-size:11px"> × {lots} lots × {current_lot_size}</span></span></div>
+                <span style="color:#4A5568;font-size:11px"> × {lots} × {current_lot_size}</span></span></div>
             <div class="leg-row"><span class="text-muted">MAX PROFIT</span>
                 <span class="mono" style="color:#22C55E">₹{mp_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">MAX LOSS</span>
                 <span class="mono" style="color:#EF4444">₹{ml_total:,.0f}</span></div>
-            <div class="leg-row"><span class="text-muted">BREAKEVEN UP</span>
-                <span class="mono">{be_u:,.0f}</span></div>
-            <div class="leg-row"><span class="text-muted">BREAKEVEN DN</span>
-                <span class="mono">{be_d:,.0f}</span></div>
-            <div class="leg-row"><span class="text-muted">PROFIT RANGE</span>
-                <span class="mono">{be_u - be_d:,.0f} pts</span></div>
+            {be_html}
+            {profit_range_html}
             <div class="leg-row"><span class="text-muted">R / R</span>
-                <span class="mono">{(ml_total/mp_total):.1f}x</span></div>
+                <span class="mono">{rr}</span></div>
+        </div>
+        <div class="panel">
+            <div class="panel-title">Margin</div>
+            <div class="leg-row"><span class="text-muted">PER LOT</span>
+                <span class="mono">₹{mpl:,.0f}</span></div>
+            <div class="leg-row"><span class="text-muted">TOTAL ({lots} lots)</span>
+                <span class="mono" style="color:#F59E0B">₹{margin_total:,.0f}</span></div>
+            <div class="leg-row"><span class="text-muted">BASIS</span>
+                <span class="mono" style="font-size:10px">Wing × Lot size (SPAN)</span></div>
         </div>
         <div class="panel">
             <div class="panel-title">Expiry</div>
@@ -1200,8 +1270,6 @@ with tab2:
                 <span class="mono">{expiry['expiry_date']}</span></div>
             <div class="leg-row"><span class="text-muted">DTE</span>
                 <span class="mono">{expiry['dte']} days</span></div>
-            <div class="leg-row"><span class="text-muted">WEEK</span>
-                <span class="mono">NEXT WEEK</span></div>
             <div class="leg-row"><span class="text-muted">EXIT TRIGGER</span>
                 <span class="mono">DTE ≤ {st.session_state.exit_days_before_expiry}</span></div>
         </div>
@@ -1212,33 +1280,33 @@ with tab2:
             <div class="leg-row"><span class="text-muted">MULTIPLIER</span>
                 <span class="mono">{params.get('atr_multiplier', 1.2):.1f}×</span></div>
             <div class="leg-row"><span class="text-muted">DISTANCE</span>
-                <span class="mono">{dist:.0f} pts</span></div>
+                <span class="mono">{atr * params.get('atr_multiplier', 1.2):.0f} pts</span></div>
         </div>
         """, unsafe_allow_html=True)
 
         if not st.session_state.kill_switch:
-            margin = condor.get("margin_required", 75000) * lots
-            st.caption(f"Est. margin  ₹{margin:,.0f}")
-
-            # Risk override toggle — shown only when needed
-            risk_engine = RiskEngine(params)
-            check_preview = risk_engine.pre_trade_check(condor, lots, st.session_state.daily_pnl, account_size)
+            # Risk check
+            risk_engine   = RiskEngine(params)
+            check_preview = risk_engine.pre_trade_check(trade, lots, st.session_state.daily_pnl, account_size)
             if not check_preview["approved"]:
                 st.warning(f"⚠ {check_preview['reason']}", icon=None)
-                override_risk = st.checkbox("Override risk check and place anyway", value=False, key="risk_override")
+                override_risk = st.checkbox("Override risk check and place anyway",
+                                            value=False, key="risk_override")
             else:
                 override_risk = False
 
-            if st.button("Place Iron Condor", type="primary", use_container_width=True):
+            btn_label = f"Place {strategy_type}"
+            if st.button(btn_label, type="primary", use_container_width=True):
                 if check_preview["approved"] or override_risk:
                     engine = OrderEngine(paper_mode=st.session_state.paper_mode)
-                    result = engine.place_iron_condor(condor, lots)
+                    result = engine.place_iron_condor(trade, lots)
                     if result["success"]:
-                        current_lot_size = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+                        expiry_raw = expiry["expiry_date_raw"]
                         for pos in result["positions"]:
                             pos["status"]          = "ACTIVE"
-                            pos["expiry_date_raw"] = expiry["expiry_date_raw"]
+                            pos["expiry_date_raw"] = expiry_raw
                             pos["lot_size"]        = current_lot_size
+                            pos["strategy"]        = strategy_type
                         st.session_state.positions.extend(result["positions"])
                         st.session_state.strategy_active = True
                         tag = "MANUAL ENTRY" + (" [RISK OVERRIDE]" if override_risk else "")
@@ -1246,10 +1314,11 @@ with tab2:
                             "time":    datetime.now().strftime("%H:%M:%S"),
                             "date":    get_ist_now().date().isoformat(),
                             "action":  tag,
-                            "details": f"Iron Condor · {lots} lot(s) · Credit ₹{nc:.1f}",
+                            "details": f"{strategy_type} · {lots} lot(s) · Credit ₹{nc:.1f}",
                             "pnl": 0, "status": "FILLED",
                         })
-                        save_session(st.session_state.positions, st.session_state.trade_log, st.session_state.daily_pnl)
+                        save_session(st.session_state.positions, st.session_state.trade_log,
+                                     st.session_state.daily_pnl)
                         st.success(f"Placed — {len(result['positions'])} legs active")
                         st.rerun()
                     else:

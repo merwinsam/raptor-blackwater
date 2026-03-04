@@ -282,7 +282,9 @@ class OptionChainScanner:
             "max_loss":          round(ml, 0),    # worst-case wing; app.py × lots
             "breakeven_upper":   round(be_u, 0),
             "breakeven_lower":   round(be_d, 0),
-            "margin_required":   round(max(ce_wing, pe_wing) * ls, 0),  # per lot
+            "margin_required":   round(max(ce_wing, pe_wing) * ls, 0),
+            "margin_per_lot":    round(max(ce_wing, pe_wing) * ls, 0),
+            "wing_width":        max(ce_wing, pe_wing),
             "spot_at_entry":     spot,
             "atr":               0,
             "strike_distance":   round(ce_sell["strike"] - spot, 0),

@@ -180,15 +180,18 @@ class IronCondorStrategy:
         ]
 
         return {
-            "legs": legs,
-            "net_credit": round(net_credit, 2),
-            "max_profit": round(max_profit, 0),
-            "max_loss": round(max_loss, 0),
+            "legs":            legs,
+            "net_credit":      round(net_credit, 2),
+            "max_profit":      round(max_profit, 0),
+            "max_loss":        round(max_loss, 0),
             "breakeven_upper": round(breakeven_upper, 0),
             "breakeven_lower": round(breakeven_lower, 0),
             "margin_required": round(margin_required, 0),
-            "spot_at_entry": spot,
-            "atr": atr,
+            # margin_per_lot = SPAN worst-case = max wing × lot_size
+            "margin_per_lot":  round(max(ce_wing_width, pe_wing_width) * self.lot_size, 0),
+            "wing_width":      max(ce_wing_width, pe_wing_width),
+            "spot_at_entry":   spot,
+            "atr":             atr,
             "strike_distance": round(strike_distance, 0),
         }
 
