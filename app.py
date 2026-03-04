@@ -1179,8 +1179,8 @@ with tab2:
         <div class="panel">
             <div class="panel-title">Summary · {lots} lot{"s" if lots > 1 else ""} × {current_lot_size}</div>
             <div class="leg-row"><span class="text-muted">NET CREDIT</span>
-                <span class="mono" style="color:#22C55E">₹{nc_total:,.0f}
-                <span style="color:#4A5568;font-size:11px"> (₹{nc:.1f}/u)</span></span></div>
+                <span class="mono" style="color:#22C55E">₹{nc:.1f}/unit
+                <span style="color:#4A5568;font-size:11px"> × {lots} lots × {current_lot_size}</span></span></div>
             <div class="leg-row"><span class="text-muted">MAX PROFIT</span>
                 <span class="mono" style="color:#22C55E">₹{mp_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">MAX LOSS</span>

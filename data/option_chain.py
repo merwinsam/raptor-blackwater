@@ -150,8 +150,8 @@ class OptionChainScanner:
                 delta = _bs_delta(spot, instr["strike"], tte,
                                   sigma, instr["instrument_type"])
 
-            if ltp < 0.5:
-                continue   # skip illiquid / zero-price strikes
+            if ltp < 5.0:
+                continue   # skip illiquid strikes (min ₹5 premium)
 
             chain.append({
                 "strike":      instr["strike"],
@@ -176,20 +176,36 @@ class OptionChainScanner:
 
         # ── Step 4: Find strikes closest to target delta ──────────────────────
         def closest(rows, target_delta):
+            if not rows:
+                raise ValueError("No liquid strikes found near target delta. "
+                                 "Try scanning during market hours.")
             return min(rows, key=lambda r: abs(r["delta"] - target_delta))
 
-        ce_sell = closest([r for r in ce_chain if r["strike"] > spot], sell_delta)
-        pe_sell = closest([r for r in pe_chain if r["strike"] < spot], sell_delta)
+        # Only consider strikes with meaningful premium (already filtered above)
+        liquid_ce = [r for r in ce_chain if r["strike"] > spot]
+        liquid_pe = [r for r in pe_chain if r["strike"] < spot]
 
-        # Buy legs: further OTM than sell legs
-        ce_buy = closest(
-            [r for r in ce_chain if r["strike"] > ce_sell["strike"]],
-            buy_delta
-        )
-        pe_buy = closest(
-            [r for r in pe_chain if r["strike"] < pe_sell["strike"]],
-            buy_delta
-        )
+        if not liquid_ce or not liquid_pe:
+            raise ValueError(
+                "Insufficient liquid strikes found. "
+                "Market may be closed or option chain data unavailable."
+            )
+
+        ce_sell = closest(liquid_ce, sell_delta)
+        pe_sell = closest(liquid_pe, sell_delta)
+
+        # Buy legs: further OTM than sell legs, also liquid
+        ce_buy_candidates = [r for r in ce_chain if r["strike"] > ce_sell["strike"]]
+        pe_buy_candidates = [r for r in pe_chain if r["strike"] < pe_sell["strike"]]
+
+        if not ce_buy_candidates or not pe_buy_candidates:
+            raise ValueError(
+                "Could not find liquid buy (hedge) strikes beyond sell strikes. "
+                "Try widening the strike range."
+            )
+
+        ce_buy = closest(ce_buy_candidates, buy_delta)
+        pe_buy = closest(pe_buy_candidates, buy_delta)
 
         # ── Step 5: Build condor dict ─────────────────────────────────────────
         nc   = (ce_sell["ltp"] + pe_sell["ltp"]) - (ce_buy["ltp"] + pe_buy["ltp"])
@@ -198,8 +214,10 @@ class OptionChainScanner:
         ce_wing = ce_buy["strike"]  - ce_sell["strike"]
         pe_wing = pe_sell["strike"] - pe_buy["strike"]
 
-        mp   = nc * ls
-        ml   = (max(ce_wing, pe_wing) - nc) * ls
+        # Keep consistent with iron_condor.py:
+        # max_profit and max_loss are for 1 lot only — app.py multiplies by lots
+        mp   = nc * ls                               # 1-lot rupee profit
+        ml   = (max(ce_wing, pe_wing) - nc) * ls     # 1-lot rupee loss
         be_u = ce_sell["strike"] + nc
         be_d = pe_sell["strike"] - nc
 
