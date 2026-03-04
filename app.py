@@ -946,6 +946,28 @@ for pos in st.session_state.positions:
                 })
                 save_session(st.session_state.positions, st.session_state.trade_log, st.session_state.daily_pnl)
 
+# ── Top control bar — Kill Switch + connection status always visible ───────────
+_tb1, _tb2, _tb3, _tb4 = st.columns([4, 2, 2, 2])
+with _tb1:
+    pass  # spacer
+with _tb2:
+    kite_status = "🟢 CONNECTED" if st.session_state.get("kite_connected") else "🔴 DISCONNECTED"
+    st.caption(kite_status)
+with _tb3:
+    mode_lbl = "📄 PAPER" if st.session_state.paper_mode else "⚡ LIVE"
+    st.caption(mode_lbl)
+with _tb4:
+    if st.session_state.kill_switch:
+        if st.button("🔓 RESET KILL", type="primary", use_container_width=True):
+            st.session_state.kill_switch = False
+            st.rerun()
+    else:
+        if st.button("🔴 KILL", type="primary", use_container_width=True,
+                     help="Emergency: close all positions and halt trading"):
+            st.session_state.kill_switch = True
+            st.session_state.strategy_active = False
+            st.rerun()
+
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs(["OVERVIEW", "STRATEGY", "POSITIONS", "LOG"])
 
