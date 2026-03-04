@@ -39,33 +39,63 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* Always show the sidebar collapse arrow — make it larger and visible */
+/* Floating sidebar open button — always visible bottom-left */
+#sidebar-open-btn {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 99999;
+    background: #1D4ED8;
+    color: #fff;
+    border: none;
+    border-radius: 0 8px 8px 0;
+    width: 22px;
+    height: 56px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    writing-mode: vertical-rl;
+    letter-spacing: 0.08em;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    opacity: 0.85;
+    transition: opacity 0.2s, width 0.2s;
+}
+#sidebar-open-btn:hover { opacity: 1; width: 26px; }
+/* Hide button when sidebar is open */
+[data-testid="stSidebar"][aria-expanded="true"] ~ * #sidebar-open-btn { display: none; }
+</style>
+<button id="sidebar-open-btn" onclick="
+    const sidebar = window.parent.document.querySelector('[data-testid=stSidebar]');
+    const btn = window.parent.document.querySelector('[data-testid=collapsedControl]');
+    if (btn) btn.click();
+" title="Open sidebar">☰</button>
+<script>
+// Auto-hide button when sidebar is visible
+const checkSidebar = () => {
+    const sidebar = window.parent.document.querySelector('[data-testid=stSidebar]');
+    const btn = window.parent.document.getElementById('sidebar-open-btn');
+    if (!sidebar || !btn) return;
+    const expanded = sidebar.getAttribute('aria-expanded');
+    btn.style.display = (expanded === 'false' || !expanded) ? 'flex' : 'none';
+};
+setInterval(checkSidebar, 500);
+</script>
+<style>
+/* Also make Streamlit's own collapse arrow more visible */
 [data-testid="collapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
+    background: #1D4ED8 !important;
+    border-radius: 0 8px 8px 0 !important;
+    width: 20px !important;
+    min-height: 56px !important;
     opacity: 1 !important;
-    width: 2.5rem !important;
-    height: 2.5rem !important;
-    background: #1D2535 !important;
-    border-radius: 0 6px 6px 0 !important;
-    border: 1px solid #2D3748 !important;
-    border-left: none !important;
-    top: 50% !important;
-    position: fixed !important;
-    left: 0 !important;
-    z-index: 999 !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: pointer !important;
+    visibility: visible !important;
 }
-[data-testid="collapsedControl"]:hover {
-    background: #2D3748 !important;
-}
-[data-testid="collapsedControl"] svg {
-    fill: #94A3B8 !important;
-    width: 1rem !important;
-    height: 1rem !important;
-}
+[data-testid="collapsedControl"] svg { fill: white !important; }
 </style>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
@@ -652,9 +682,27 @@ with st.sidebar:
 
     st.divider()
     st.markdown('<p class="panel-title">Strategy</p>', unsafe_allow_html=True)
-    atr_multiplier = st.number_input("ATR Multiplier",    value=1.2,  min_value=0.5,  max_value=3.0,  step=0.1)
-    sell_delta     = st.number_input("Sell Delta",        value=0.15, min_value=0.05, max_value=0.30, step=0.01)
-    buy_delta      = st.number_input("Buy Delta",         value=0.10, min_value=0.03, max_value=0.20, step=0.01)
+
+    strike_mode = st.radio(
+        "Strike Selection Mode",
+        ["Delta", "ATR"],
+        horizontal=True,
+        help="Delta: pick strikes by target delta from live chain. ATR: sell at 1×ATR, hedge 200pts further OTM.",
+    )
+    st.session_state.strike_mode = strike_mode
+
+    atr_multiplier = st.number_input("ATR Multiplier",    value=1.25 if strike_mode == "ATR" else 1.2,
+                                      min_value=0.5, max_value=3.0, step=0.05,
+                                      help="ATR mode: sell strike = spot ± ATR × multiplier")
+    if strike_mode == "Delta":
+        sell_delta = st.number_input("Sell Delta", value=0.15, min_value=0.05, max_value=0.30, step=0.01)
+        buy_delta  = st.number_input("Buy Delta",  value=0.10, min_value=0.03, max_value=0.20, step=0.01)
+        hedge_pts  = None
+    else:
+        sell_delta = 0.15   # unused in ATR mode but kept for fallback
+        buy_delta  = 0.10
+        hedge_pts  = st.number_input("Hedge Distance (pts)", value=200, min_value=50, max_value=500, step=50,
+                                      help="ATR mode: buy (hedge) strike is this many points further OTM from sell strike")
     sl_pct         = st.number_input("SL % of Premium",  value=50,   min_value=20,   max_value=100,  step=5)
     dte_target     = st.number_input("Target DTE",        value=14,   min_value=7,    max_value=30,   step=1)
     lot_size       = st.number_input("Lot Size",          value=config.NIFTY_LOT_SIZE, min_value=1, max_value=500, step=1,
@@ -729,6 +777,8 @@ with st.sidebar:
         "daily_kill_pct": daily_kill_pct / 100,
         "account_size":   account_size,
         "lot_size":       lot_size,
+        "strike_mode":    strike_mode,
+        "hedge_pts":      hedge_pts if hedge_pts else 200,
     }
 
 # ── Header ─────────────────────────────────────────────────────────────────────

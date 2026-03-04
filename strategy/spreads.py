@@ -71,8 +71,31 @@ class BearCallSpread:
         expiry    = _get_next_tuesday()
         expiry_d  = _expiry_dict(expiry)
 
-        if chain_data and chain_data.get("scan_meta"):
-            # Use scanner-selected strikes
+        strike_mode = self.params.get("strike_mode", "Delta")
+        hedge_pts   = int(self.params.get("hedge_pts", 200))
+
+        if strike_mode == "ATR":
+            # ATR mode: sell at spot + ATR × multiplier, hedge 200pts further OTM
+            dist         = atr * self.params.get("atr_multiplier", 1.25)
+            ce_sell_s    = self.round_strike(spot + dist)
+            ce_buy_s     = self.round_strike(ce_sell_s + hedge_pts)
+            ce_sell_delta = self.sell_delta
+            ce_buy_delta  = self.buy_delta
+            ce_sell_prem = _estimate_prem(spot, ce_sell_s, "CE", ce_sell_delta, vix, expiry_d["dte"])
+            ce_buy_prem  = _estimate_prem(spot, ce_buy_s,  "CE", ce_buy_delta,  vix, expiry_d["dte"])
+            if kite_client:
+                try:
+                    from strategy.iron_condor import IronCondorStrategy
+                    tmp = IronCondorStrategy(self.params)
+                    expiry_raw = expiry
+                    p = kite_client.get_option_ltp(tmp._kite_symbol(ce_sell_s, "CE", expiry_raw))
+                    if p and p > 0.5: ce_sell_prem = round(p, 1)
+                    p = kite_client.get_option_ltp(tmp._kite_symbol(ce_buy_s,  "CE", expiry_raw))
+                    if p and p > 0.5: ce_buy_prem  = round(p, 1)
+                except Exception:
+                    pass
+        elif chain_data and chain_data.get("scan_meta"):
+            # Delta mode with live chain scan
             meta         = chain_data["scan_meta"]
             ce_sell_s    = meta["ce_sell"]["strike"]
             ce_buy_s     = meta["ce_buy"]["strike"]
@@ -81,7 +104,7 @@ class BearCallSpread:
             ce_sell_delta = meta["ce_sell"]["delta"]
             ce_buy_delta  = meta["ce_buy"]["delta"]
         else:
-            # ATR-based fallback
+            # Delta mode ATR fallback (no chain data)
             dist         = atr * self.params.get("atr_multiplier", config.ATR_MULTIPLIER)
             ce_sell_s    = self.round_strike(spot + dist)
             ce_buy_s     = self.round_strike(ce_sell_s + atr * 0.25)
@@ -175,7 +198,29 @@ class BullPutSpread:
         expiry   = _get_next_tuesday()
         expiry_d = _expiry_dict(expiry)
 
-        if chain_data and chain_data.get("scan_meta"):
+        strike_mode = self.params.get("strike_mode", "Delta")
+        hedge_pts   = int(self.params.get("hedge_pts", 200))
+
+        if strike_mode == "ATR":
+            dist         = atr * self.params.get("atr_multiplier", 1.25)
+            pe_sell_s    = self.round_strike(spot - dist)
+            pe_buy_s     = self.round_strike(pe_sell_s - hedge_pts)
+            pe_sell_delta = self.sell_delta
+            pe_buy_delta  = self.buy_delta
+            pe_sell_prem = _estimate_prem(spot, pe_sell_s, "PE", pe_sell_delta, vix, expiry_d["dte"])
+            pe_buy_prem  = _estimate_prem(spot, pe_buy_s,  "PE", pe_buy_delta,  vix, expiry_d["dte"])
+            if kite_client:
+                try:
+                    from strategy.iron_condor import IronCondorStrategy
+                    tmp = IronCondorStrategy(self.params)
+                    expiry_raw = expiry
+                    p = kite_client.get_option_ltp(tmp._kite_symbol(pe_sell_s, "PE", expiry_raw))
+                    if p and p > 0.5: pe_sell_prem = round(p, 1)
+                    p = kite_client.get_option_ltp(tmp._kite_symbol(pe_buy_s,  "PE", expiry_raw))
+                    if p and p > 0.5: pe_buy_prem  = round(p, 1)
+                except Exception:
+                    pass
+        elif chain_data and chain_data.get("scan_meta"):
             meta         = chain_data["scan_meta"]
             pe_sell_s    = meta["pe_sell"]["strike"]
             pe_buy_s     = meta["pe_buy"]["strike"]
