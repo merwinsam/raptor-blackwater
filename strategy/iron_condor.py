@@ -105,10 +105,11 @@ class IronCondorStrategy:
         # ── Max profit = net credit * lot_size
         max_profit = net_credit * self.lot_size
 
-        # ── Max loss = (wing_width - net_credit) * lot_size
+        # ── Max loss per wing = (wing_width - net_credit) * lot_size
+        # Use each wing independently (handles asymmetric condors correctly)
         max_loss_ce = (ce_wing_width - net_credit) * self.lot_size
         max_loss_pe = (pe_wing_width - net_credit) * self.lot_size
-        max_loss = max(max_loss_ce, max_loss_pe)
+        max_loss = max(max_loss_ce, max_loss_pe)  # worst case wing
 
         # ── Breakevens
         breakeven_upper = ce_sell_strike + net_credit

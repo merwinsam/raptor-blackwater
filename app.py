@@ -622,7 +622,7 @@ with st.sidebar:
     sl_pct         = st.number_input("SL % of Premium",  value=50,   min_value=20,   max_value=100,  step=5)
     dte_target     = st.number_input("Target DTE",        value=14,   min_value=7,    max_value=30,   step=1)
     lot_size       = st.number_input("Lot Size",          value=config.NIFTY_LOT_SIZE, min_value=1, max_value=500, step=1,
-                                      help="NIFTY lot size. P&L = (price diff) × lots × lot size")
+                                      help="NIFTY lot size (NSE: 75 from Feb 2025). P&L = (price diff) × lots × lot size")
     st.session_state.lot_size = lot_size
 
     st.divider()

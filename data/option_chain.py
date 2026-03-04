@@ -150,8 +150,8 @@ class OptionChainScanner:
                 delta = _bs_delta(spot, instr["strike"], tte,
                                   sigma, instr["instrument_type"])
 
-            if ltp < 5.0:
-                continue   # skip illiquid strikes (min ₹5 premium)
+            if ltp < 0.5:
+                continue   # skip completely zero / unquoted strikes
 
             chain.append({
                 "strike":      instr["strike"],
@@ -161,6 +161,7 @@ class OptionChainScanner:
                 "delta_raw":   round(delta, 4),
                 "token":       token,
                 "symbol":      instr["tradingsymbol"],
+                "liquid":      ltp >= 5.0,   # tag — used to filter SELL candidates
             })
 
         if not chain:
@@ -182,8 +183,9 @@ class OptionChainScanner:
             return min(rows, key=lambda r: abs(r["delta"] - target_delta))
 
         # Only consider strikes with meaningful premium (already filtered above)
-        liquid_ce = [r for r in ce_chain if r["strike"] > spot]
-        liquid_pe = [r for r in pe_chain if r["strike"] < spot]
+        # SELL legs must be liquid (min ₹5 premium) — need tight bid/ask for fills
+        liquid_ce = [r for r in ce_chain if r["strike"] > spot and r.get("liquid")]
+        liquid_pe = [r for r in pe_chain if r["strike"] < spot and r.get("liquid")]
 
         if not liquid_ce or not liquid_pe:
             raise ValueError(
@@ -196,6 +198,7 @@ class OptionChainScanner:
 
         # ── Buy (hedge) legs ─────────────────────────────────────────────────────
         # Strategy: find delta-based buy first, then enforce symmetric wing width
+        # BUY legs — no liquidity requirement, we're buying so any quote works
         ce_buy_candidates = [r for r in ce_chain if r["strike"] > ce_sell["strike"]]
         pe_buy_candidates = [r for r in pe_chain if r["strike"] < pe_sell["strike"]]
 
@@ -236,12 +239,13 @@ class OptionChainScanner:
         ce_wing = ce_buy["strike"]  - ce_sell["strike"]
         pe_wing = pe_sell["strike"] - pe_buy["strike"]
 
-        # Keep consistent with iron_condor.py:
-        # max_profit and max_loss are for 1 lot only — app.py multiplies by lots
-        mp   = nc * ls                               # 1-lot rupee profit
-        ml   = (max(ce_wing, pe_wing) - nc) * ls     # 1-lot rupee loss
-        be_u = ce_sell["strike"] + nc
-        be_d = pe_sell["strike"] - nc
+        # Per-lot figures — app.py multiplies by lots
+        mp    = nc * ls                          # 1-lot max profit
+        ml_ce = (ce_wing - nc) * ls              # 1-lot CE wing loss
+        ml_pe = (pe_wing - nc) * ls              # 1-lot PE wing loss
+        ml    = max(ml_ce, ml_pe)                # worst case wing
+        be_u  = ce_sell["strike"] + nc
+        be_d  = pe_sell["strike"] - nc
 
         ce_sl_level = round(ce_sell["ltp"] * (1 + sl_pct), 1)
         pe_sl_level = round(pe_sell["ltp"] * (1 + sl_pct), 1)
