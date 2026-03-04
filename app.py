@@ -39,6 +39,35 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* Always show the sidebar collapse arrow — make it larger and visible */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    background: #1D2535 !important;
+    border-radius: 0 6px 6px 0 !important;
+    border: 1px solid #2D3748 !important;
+    border-left: none !important;
+    top: 50% !important;
+    position: fixed !important;
+    left: 0 !important;
+    z-index: 999 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+}
+[data-testid="collapsedControl"]:hover {
+    background: #2D3748 !important;
+}
+[data-testid="collapsedControl"] svg {
+    fill: #94A3B8 !important;
+    width: 1rem !important;
+    height: 1rem !important;
+}
+</style>
+<style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1238,7 +1267,7 @@ with tab2:
                 f"<div class='leg-row'><span class='text-muted'>BREAKEVEN UP</span><span class='mono'>{be_u:,.0f}</span></div>"
                 f"<div class='leg-row'><span class='text-muted'>BREAKEVEN DN</span><span class='mono'>{be_d:,.0f}</span></div>"
             )
-            profit_range_html = f"<div class='leg-row'><span class='text-muted'>PROFIT RANGE</span><span class='mono'>{be_u - be_d:,.0f} pts</span></div>" 
+            profit_range_html = f"<div class='leg-row'><span class='text-muted'>PROFIT RANGE</span><span class='mono'>{be_u - be_d:,.0f} pts</span></div>"
 
         rr = f"{ml_total/mp_total:.1f}x" if mp_total else "—"
         lots_label = f"{lots} lot{'s' if lots > 1 else ''}"
@@ -1246,11 +1275,17 @@ with tab2:
         st.markdown(
             "<div class='panel'>"
             f"<div class='panel-title'>{strategy_type} &middot; {lots_label} &times; {current_lot_size}</div>"
-            f"<div class='leg-row'><span class='text-muted'>NET CREDIT</span><span class='mono' style='color:#22C55E'>&#8377;{nc:.1f}/unit<span style='color:#4A5568;font-size:11px'> &times; {lots} &times; {current_lot_size}</span></span></div>"
-            f"<div class='leg-row'><span class='text-muted'>MAX PROFIT</span><span class='mono' style='color:#22C55E'>&#8377;{mp_total:,.0f}</span></div>"
-            f"<div class='leg-row'><span class='text-muted'>MAX LOSS</span><span class='mono' style='color:#EF4444'>&#8377;{ml_total:,.0f}</span></div>"
-            + be_html + profit_range_html
-            + f"<div class='leg-row'><span class='text-muted'>R / R</span><span class='mono'>{rr}</span></div>"
+            f"<div class='leg-row'><span class='text-muted'>NET CREDIT</span>"
+            f"<span class='mono' style='color:#22C55E'>&#8377;{nc:.1f}/unit"
+            f"<span style='color:#4A5568;font-size:11px'> &times; {lots} &times; {current_lot_size}</span></span></div>"
+            f"<div class='leg-row'><span class='text-muted'>MAX PROFIT</span>"
+            f"<span class='mono' style='color:#22C55E'>&#8377;{mp_total:,.0f}</span></div>"
+            f"<div class='leg-row'><span class='text-muted'>MAX LOSS</span>"
+            f"<span class='mono' style='color:#EF4444'>&#8377;{ml_total:,.0f}</span></div>"
+            + be_html
+            + profit_range_html
+            + f"<div class='leg-row'><span class='text-muted'>R / R</span>"
+            f"<span class='mono'>{rr}</span></div>"
             "</div>",
             unsafe_allow_html=True,
         )
