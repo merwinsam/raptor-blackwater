@@ -130,10 +130,10 @@ class BearCallSpread:
             "max_profit":      round(mp, 0),
             "max_loss":        round(ml, 0),
             "margin_per_lot":  round(margin, 0),
+            "wing_width":      wing,
             "breakeven":       round(be, 0),
             "breakeven_upper": round(be, 0),
             "breakeven_lower": 0,
-            "wing_width":      wing,
             "spot_at_entry":   spot,
         }
 
@@ -232,10 +232,10 @@ class BullPutSpread:
             "max_profit":      round(mp, 0),
             "max_loss":        round(ml, 0),
             "margin_per_lot":  round(margin, 0),
+            "wing_width":      wing,
             "breakeven":       round(be, 0),
             "breakeven_upper": 0,
             "breakeven_lower": round(be, 0),
-            "wing_width":      wing,
             "spot_at_entry":   spot,
         }
 

@@ -1110,14 +1110,19 @@ with tab2:
                      hide_index=True, height=140 if strategy_type != "Iron Condor" else 178)
 
     # ── Instantiate strategy ──────────────────────────────────────────────────
+    _base_expiry = strat.get_next_week_expiry()
+    _scan_expiry = {
+        "expiry_date":     scanned["scan_meta"]["expiry"]          if scanned else _base_expiry["expiry_date"],
+        "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"] if scanned else _base_expiry["expiry_date_raw"],
+        "dte":             scanned["scan_meta"]["dte"]             if scanned else _base_expiry["dte"],
+    }
+
     if strategy_type == "Bear Call Spread":
         spread_obj = BearCallSpread(params)
         trade      = spread_obj.build(spot, atr, vix,
                                       kite_client=kite_client_ref,
                                       chain_data=scanned)
-        expiry     = {"expiry_date": trade["legs"][0]["symbol"][5:12] if scanned else strat.get_next_week_expiry()["expiry_date"],
-                      "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"] if scanned else strat.get_next_week_expiry()["expiry_date_raw"],
-                      "dte": scanned["scan_meta"]["dte"] if scanned else strat.get_next_week_expiry()["dte"]}
+        expiry     = _scan_expiry
         payoff_fn  = spread_obj.compute_payoff
 
     elif strategy_type == "Bull Put Spread":
@@ -1125,9 +1130,7 @@ with tab2:
         trade      = spread_obj.build(spot, atr, vix,
                                       kite_client=kite_client_ref,
                                       chain_data=scanned)
-        expiry     = {"expiry_date": strat.get_next_week_expiry()["expiry_date"],
-                      "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"] if scanned else strat.get_next_week_expiry()["expiry_date_raw"],
-                      "dte": scanned["scan_meta"]["dte"] if scanned else strat.get_next_week_expiry()["dte"]}
+        expiry     = _scan_expiry
         payoff_fn  = spread_obj.compute_payoff
 
     else:  # Iron Condor
