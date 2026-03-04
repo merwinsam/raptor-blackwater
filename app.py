@@ -613,9 +613,6 @@ with st.sidebar:
     buy_delta      = st.number_input("Buy Delta",         value=0.10, min_value=0.03, max_value=0.20, step=0.01)
     sl_pct         = st.number_input("SL % of Premium",  value=50,   min_value=20,   max_value=100,  step=5)
     dte_target     = st.number_input("Target DTE",        value=14,   min_value=7,    max_value=30,   step=1)
-    lot_size       = st.number_input("Lot Size",          value=config.NIFTY_LOT_SIZE, min_value=1, max_value=500, step=1,
-                                      help="NIFTY lot size. P&L = (price diff) × lots × lot size")
-    st.session_state.lot_size = lot_size
 
     st.divider()
     st.markdown('<p class="panel-title">Schedule</p>', unsafe_allow_html=True)
@@ -633,30 +630,6 @@ with st.sidebar:
         st.session_state.strategy_active = False
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.divider()
-    st.markdown('<p class="panel-title">Session</p>', unsafe_allow_html=True)
-    if st.button("New Session", use_container_width=True, help="Clear all positions, P&L and trade log for a fresh start"):
-        # Clear session files from disk
-        import glob, os
-        from pathlib import Path
-        logs_dir = Path("logs")
-        for f in logs_dir.glob("*_session.json"):
-            f.unlink(missing_ok=True)
-        pnl_file = logs_dir / "pnl_history.json"
-        if pnl_file.exists():
-            pnl_file.unlink()
-        # Reset all in-memory state
-        st.session_state.positions        = []
-        st.session_state.trade_log        = []
-        st.session_state.daily_pnl        = 0.0
-        st.session_state.total_pnl        = 0.0
-        st.session_state.mtm_history      = []
-        st.session_state.strategy_active  = False
-        st.session_state.kill_switch      = False
-        st.session_state.last_execution_date = None
-        st.success("Session cleared — fresh start.")
-        st.rerun()
-
     st.session_state.strategy_params = {
         "atr_multiplier": atr_multiplier,
         "sell_delta":     sell_delta,
@@ -667,7 +640,6 @@ with st.sidebar:
         "max_loss_amt":   max_loss_amt,
         "daily_kill_pct": daily_kill_pct / 100,
         "account_size":   account_size,
-        "lot_size":       lot_size,
     }
 
 # ── Header ─────────────────────────────────────────────────────────────────────
@@ -1081,11 +1053,9 @@ with tab2:
                     engine = OrderEngine(paper_mode=st.session_state.paper_mode)
                     result = engine.place_iron_condor(condor, lots)
                     if result["success"]:
-                        current_lot_size = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
                         for pos in result["positions"]:
                             pos["status"]          = "ACTIVE"
                             pos["expiry_date_raw"] = expiry["expiry_date_raw"]
-                            pos["lot_size"]        = current_lot_size
                         st.session_state.positions.extend(result["positions"])
                         st.session_state.strategy_active = True
                         tag = "MANUAL ENTRY" + (" [RISK OVERRIDE]" if override_risk else "")
