@@ -84,6 +84,13 @@ class OptionChainScanner:
     def _get_nfo_instruments(self) -> list:
         """Fetch full NFO instrument dump from Kite (cached daily)."""
         import streamlit as st
+
+        if self.kite is None or getattr(self.kite, "kite", None) is None:
+            raise ValueError(
+                "Kite session not initialized. "
+                "Connect with a valid API key and access token first."
+            )
+
         cache_key      = "_nfo_instruments_cache"
         cache_date_key = "_nfo_instruments_date"
         today          = date.today().isoformat()

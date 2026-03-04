@@ -894,7 +894,10 @@ with tab2:
 
     # ── Option Chain Scanner ──────────────────────────────────────────────────
     kite_client_ref = st.session_state.get("kite_client")
-    is_connected    = st.session_state.get("kite_connected") and kite_client_ref
+    # is_connected only True when inner kite session is fully initialized
+    is_connected    = (st.session_state.get("kite_connected")
+                       and kite_client_ref is not None
+                       and getattr(kite_client_ref, "kite", None) is not None)
 
     scan_col1, scan_col2 = st.columns([3, 1])
     with scan_col1:
@@ -1547,9 +1550,8 @@ with tab5:
                     else:
                         st.error(result["message"])
                 except Exception as e:
-                    client = KiteClient(api_key, access_token, paper_mode=True)
-                    st.session_state.kite_client = client
-                    st.session_state.kite_connected = True
+                    st.error(f"Connection failed: {e}")
+                    st.session_state.kite_connected = False
     with col2:
         if st.session_state.kite_connected:
             st.markdown('<span class="status-dot dot-green"></span>On',  unsafe_allow_html=True)
