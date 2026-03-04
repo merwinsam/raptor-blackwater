@@ -481,12 +481,18 @@ def init_session():
         "last_execution_date": None,
         "execution_time": "09:45",
         "exit_days_before_expiry": 4,
+        "lot_size": config.NIFTY_LOT_SIZE,   # always seeds from config (65)
+        "auto_lots": 1,
+        "strategy_type": "Bear Call Spread",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 init_session()
+
+# Force lot_size to config value — overrides stale cached values from old sessions
+st.session_state.lot_size = config.NIFTY_LOT_SIZE
 
 # ── Auto-load token + session on startup ──────────────────────────────────────
 if not st.session_state.get("_startup_done"):
@@ -1242,30 +1248,34 @@ with tab2:
                 <span class="mono">{be_u - be_d:,.0f} pts</span></div>'''
 
         rr = f"{ml_total/mp_total:.1f}x" if mp_total else "—"
+        lots_label = f"{lots} lot{'s' if lots > 1 else ''}"
 
-        st.markdown(f"""
+        summary_html = f"""
         <div class="panel">
-            <div class="panel-title">{strategy_type} · {lots} lot{"s" if lots > 1 else ""} × {current_lot_size}</div>
+            <div class="panel-title">{strategy_type} · {lots_label} × {current_lot_size}</div>
             <div class="leg-row"><span class="text-muted">NET CREDIT</span>
-                <span class="mono" style="color:#22C55E">₹{nc:.1f}/unit
-                <span style="color:#4A5568;font-size:11px"> × {lots} × {current_lot_size}</span></span></div>
+                <span class="mono" style="color:#22C55E">&#8377;{nc:.1f}/unit
+                <span style="color:#4A5568;font-size:11px"> &times; {lots} &times; {current_lot_size}</span></span></div>
             <div class="leg-row"><span class="text-muted">MAX PROFIT</span>
-                <span class="mono" style="color:#22C55E">₹{mp_total:,.0f}</span></div>
+                <span class="mono" style="color:#22C55E">&#8377;{mp_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">MAX LOSS</span>
-                <span class="mono" style="color:#EF4444">₹{ml_total:,.0f}</span></div>
-            {be_html}
-            {profit_range_html}
+                <span class="mono" style="color:#EF4444">&#8377;{ml_total:,.0f}</span></div>
+            """ + be_html + profit_range_html + f"""
             <div class="leg-row"><span class="text-muted">R / R</span>
                 <span class="mono">{rr}</span></div>
-        </div>
+        </div>"""
+
+        st.markdown(summary_html, unsafe_allow_html=True)
+
+        other_html = f"""
         <div class="panel">
             <div class="panel-title">Margin</div>
             <div class="leg-row"><span class="text-muted">PER LOT</span>
-                <span class="mono">₹{mpl:,.0f}</span></div>
+                <span class="mono">&#8377;{mpl:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">TOTAL ({lots} lots)</span>
-                <span class="mono" style="color:#F59E0B">₹{margin_total:,.0f}</span></div>
+                <span class="mono" style="color:#F59E0B">&#8377;{margin_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">BASIS</span>
-                <span class="mono" style="font-size:10px">Wing × Lot size (SPAN)</span></div>
+                <span class="mono" style="font-size:10px">Wing &times; Lot size (SPAN)</span></div>
         </div>
         <div class="panel">
             <div class="panel-title">Expiry</div>
@@ -1274,18 +1284,19 @@ with tab2:
             <div class="leg-row"><span class="text-muted">DTE</span>
                 <span class="mono">{expiry['dte']} days</span></div>
             <div class="leg-row"><span class="text-muted">EXIT TRIGGER</span>
-                <span class="mono">DTE ≤ {st.session_state.exit_days_before_expiry}</span></div>
+                <span class="mono">DTE &le; {st.session_state.exit_days_before_expiry}</span></div>
         </div>
         <div class="panel">
             <div class="panel-title">Strike Selection</div>
             <div class="leg-row"><span class="text-muted">ATR (14D)</span>
                 <span class="mono">{atr:.0f} pts</span></div>
             <div class="leg-row"><span class="text-muted">MULTIPLIER</span>
-                <span class="mono">{params.get('atr_multiplier', 1.2):.1f}×</span></div>
+                <span class="mono">{params.get('atr_multiplier', 1.2):.1f}&times;</span></div>
             <div class="leg-row"><span class="text-muted">DISTANCE</span>
                 <span class="mono">{atr * params.get('atr_multiplier', 1.2):.0f} pts</span></div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+        st.markdown(other_html, unsafe_allow_html=True)
 
         if not st.session_state.kill_switch:
             # Risk check
