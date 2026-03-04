@@ -194,7 +194,8 @@ class OptionChainScanner:
         ce_sell = closest(liquid_ce, sell_delta)
         pe_sell = closest(liquid_pe, sell_delta)
 
-        # Buy legs: further OTM than sell legs, also liquid
+        # ── Buy (hedge) legs ─────────────────────────────────────────────────────
+        # Strategy: find delta-based buy first, then enforce symmetric wing width
         ce_buy_candidates = [r for r in ce_chain if r["strike"] > ce_sell["strike"]]
         pe_buy_candidates = [r for r in pe_chain if r["strike"] < pe_sell["strike"]]
 
@@ -204,8 +205,29 @@ class OptionChainScanner:
                 "Try widening the strike range."
             )
 
-        ce_buy = closest(ce_buy_candidates, buy_delta)
-        pe_buy = closest(pe_buy_candidates, buy_delta)
+        # Find delta-based buy legs
+        ce_buy_delta = closest(ce_buy_candidates, buy_delta)
+        pe_buy_delta = closest(pe_buy_candidates, buy_delta)
+
+        # Compute wing widths from delta selection
+        ce_wing_delta = ce_buy_delta["strike"] - ce_sell["strike"]
+        pe_wing_delta = pe_sell["strike"]      - pe_buy_delta["strike"]
+
+        # Enforce equal wing width — use the narrower of the two
+        wing_width = min(ce_wing_delta, pe_wing_delta)
+        # Round to nearest strike step (50pts)
+        wing_width = round(wing_width / 50) * 50
+        wing_width = max(wing_width, 100)   # minimum 100pt wing
+
+        ce_target_strike = ce_sell["strike"] + wing_width
+        pe_target_strike = pe_sell["strike"] - wing_width
+
+        # Find the closest available liquid strike to each target
+        def closest_strike(rows, target_strike):
+            return min(rows, key=lambda r: abs(r["strike"] - target_strike))
+
+        ce_buy = closest_strike(ce_buy_candidates, ce_target_strike)
+        pe_buy = closest_strike(pe_buy_candidates, pe_target_strike)
 
         # ── Step 5: Build condor dict ─────────────────────────────────────────
         nc   = (ce_sell["ltp"] + pe_sell["ltp"]) - (ce_buy["ltp"] + pe_buy["ltp"])
