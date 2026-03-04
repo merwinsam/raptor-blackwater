@@ -1228,44 +1228,32 @@ with tab2:
         # ── Summary panel ─────────────────────────────────────────────────────
         # Strategy-specific breakeven display
         if strategy_type == "Bear Call Spread":
-            be_html = f'''
-            <div class="leg-row"><span class="text-muted">BREAKEVEN</span>
-                <span class="mono">{be_u:,.0f}</span></div>'''
+            be_html = f"<div class='leg-row'><span class='text-muted'>BREAKEVEN</span><span class='mono'>{be_u:,.0f}</span></div>"
             profit_range_html = ""
         elif strategy_type == "Bull Put Spread":
-            be_html = f'''
-            <div class="leg-row"><span class="text-muted">BREAKEVEN</span>
-                <span class="mono">{be_d:,.0f}</span></div>'''
+            be_html = f"<div class='leg-row'><span class='text-muted'>BREAKEVEN</span><span class='mono'>{be_d:,.0f}</span></div>"
             profit_range_html = ""
         else:
-            be_html = f'''
-            <div class="leg-row"><span class="text-muted">BREAKEVEN UP</span>
-                <span class="mono">{be_u:,.0f}</span></div>
-            <div class="leg-row"><span class="text-muted">BREAKEVEN DN</span>
-                <span class="mono">{be_d:,.0f}</span></div>'''
-            profit_range_html = f'''
-            <div class="leg-row"><span class="text-muted">PROFIT RANGE</span>
-                <span class="mono">{be_u - be_d:,.0f} pts</span></div>'''
+            be_html = (
+                f"<div class='leg-row'><span class='text-muted'>BREAKEVEN UP</span><span class='mono'>{be_u:,.0f}</span></div>"
+                f"<div class='leg-row'><span class='text-muted'>BREAKEVEN DN</span><span class='mono'>{be_d:,.0f}</span></div>"
+            )
+            profit_range_html = f"<div class='leg-row'><span class='text-muted'>PROFIT RANGE</span><span class='mono'>{be_u - be_d:,.0f} pts</span></div>" 
 
         rr = f"{ml_total/mp_total:.1f}x" if mp_total else "—"
         lots_label = f"{lots} lot{'s' if lots > 1 else ''}"
 
-        summary_html = f"""
-        <div class="panel">
-            <div class="panel-title">{strategy_type} · {lots_label} × {current_lot_size}</div>
-            <div class="leg-row"><span class="text-muted">NET CREDIT</span>
-                <span class="mono" style="color:#22C55E">&#8377;{nc:.1f}/unit
-                <span style="color:#4A5568;font-size:11px"> &times; {lots} &times; {current_lot_size}</span></span></div>
-            <div class="leg-row"><span class="text-muted">MAX PROFIT</span>
-                <span class="mono" style="color:#22C55E">&#8377;{mp_total:,.0f}</span></div>
-            <div class="leg-row"><span class="text-muted">MAX LOSS</span>
-                <span class="mono" style="color:#EF4444">&#8377;{ml_total:,.0f}</span></div>
-            """ + be_html + profit_range_html + f"""
-            <div class="leg-row"><span class="text-muted">R / R</span>
-                <span class="mono">{rr}</span></div>
-        </div>"""
-
-        st.markdown(summary_html, unsafe_allow_html=True)
+        st.markdown(
+            "<div class='panel'>"
+            f"<div class='panel-title'>{strategy_type} &middot; {lots_label} &times; {current_lot_size}</div>"
+            f"<div class='leg-row'><span class='text-muted'>NET CREDIT</span><span class='mono' style='color:#22C55E'>&#8377;{nc:.1f}/unit<span style='color:#4A5568;font-size:11px'> &times; {lots} &times; {current_lot_size}</span></span></div>"
+            f"<div class='leg-row'><span class='text-muted'>MAX PROFIT</span><span class='mono' style='color:#22C55E'>&#8377;{mp_total:,.0f}</span></div>"
+            f"<div class='leg-row'><span class='text-muted'>MAX LOSS</span><span class='mono' style='color:#EF4444'>&#8377;{ml_total:,.0f}</span></div>"
+            + be_html + profit_range_html
+            + f"<div class='leg-row'><span class='text-muted'>R / R</span><span class='mono'>{rr}</span></div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
         other_html = f"""
         <div class="panel">
