@@ -1123,7 +1123,8 @@ with tab2:
             )
             profit_range_html = f"<div class='leg-row'><span class='text-muted'>PROFIT RANGE</span><span class='mono'>{be_u - be_d:,.0f} pts</span></div>"
 
-        rr = f"{ml_total/mp_total:.1f}x" if mp_total else "—"
+        rr       = f"1 : {ml_total/mp_total:.1f}" if mp_total else "—"
+        win_rate = f"{ml_total/(ml_total+mp_total)*100:.0f}%" if (ml_total+mp_total) else "—"
         lots_label = f"{lots} lot{'s' if lots > 1 else ''}"
 
         st.markdown(
@@ -1140,6 +1141,8 @@ with tab2:
             + profit_range_html
             + f"<div class='leg-row'><span class='text-muted'>R / R</span>"
             f"<span class='mono'>{rr}</span></div>"
+            f"<div class='leg-row'><span class='text-muted'>MIN WIN RATE</span>"
+            f"<span class='mono'>{win_rate}</span></div>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -1170,7 +1173,7 @@ with tab2:
             <div class="leg-row"><span class="text-muted">MULTIPLIER</span>
                 <span class="mono">{params.get('atr_multiplier', 1.2):.1f}&times;</span></div>
             <div class="leg-row"><span class="text-muted">DISTANCE</span>
-                <span class="mono">{atr * params.get('atr_multiplier', 1.2):.0f} pts</span></div>
+                <span class="mono">{trade.get('strike_distance', atr * params.get('atr_multiplier', 1.2)):.0f} pts</span></div>
         </div>
         """
         st.markdown(other_html, unsafe_allow_html=True)

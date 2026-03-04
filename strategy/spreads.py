@@ -196,6 +196,7 @@ class BearCallSpread:
             "breakeven_upper": round(be, 0),
             "breakeven_lower": 0,
             "spot_at_entry":   spot,
+            "strike_distance": round(ce_sell_s - spot, 0),
         }
 
     def compute_payoff(self, price_range: np.ndarray, spread: dict) -> np.ndarray:
@@ -311,6 +312,7 @@ class BullPutSpread:
             "breakeven_upper": 0,
             "breakeven_lower": round(be, 0),
             "spot_at_entry":   spot,
+            "strike_distance": round(spot - pe_sell_s, 0),
         }
 
     def compute_payoff(self, price_range: np.ndarray, spread: dict) -> np.ndarray:
