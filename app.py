@@ -14,6 +14,7 @@ from strategy.atr_model import ATRModel
 from risk.risk_engine import RiskEngine
 from execution.order_engine import OrderEngine
 from broker.kite_client import KiteClient
+from data.option_chain import OptionChainScanner
 from data.persistence import (save_session, load_session, list_sessions,
                                update_pnl_history, load_pnl_history, total_pnl,
                                save_token, load_token)
@@ -976,9 +977,108 @@ with tab2:
     vix     = st.session_state.vix
     atr     = atr_mdl.compute_atr_from_vix(spot, vix)
     st.session_state.atr = atr
-    strat   = IronCondorStrategy(params)
-    condor  = strat.build_condor(spot, atr, vix, kite_client=st.session_state.get("kite_client"))
-    expiry  = strat.get_next_week_expiry()
+    # Inject sidebar lot_size into params so IronCondorStrategy uses it
+    params["lot_size"] = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+    strat = IronCondorStrategy(params)
+
+    # ── Option Chain Scanner ──────────────────────────────────────────────────
+    kite_client_ref = st.session_state.get("kite_client")
+    is_connected    = st.session_state.get("kite_connected") and kite_client_ref
+
+    scan_col1, scan_col2 = st.columns([3, 1])
+    with scan_col1:
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <span style="font-size:11px;letter-spacing:0.08em;color:#94A3B8;font-weight:500">
+                STRIKE SELECTION
+            </span>
+            <span style="font-size:10px;color:#475569;letter-spacing:0.06em" id="chain-src">
+                {} source
+            </span>
+        </div>
+        """.format("LIVE CHAIN" if is_connected else "ATR MODEL"), unsafe_allow_html=True)
+    with scan_col2:
+        scan_clicked = st.button(
+            "⟳ Scan Chain" if is_connected else "⟳ Recalculate",
+            use_container_width=True,
+            help="Scan live option chain and auto-fill strikes by delta" if is_connected
+                 else "Connect to Kite for live chain scanning",
+            type="primary"
+        )
+
+    # ── Run scan or use cached result ─────────────────────────────────────────
+    scan_error = None
+    if scan_clicked and is_connected:
+        with st.spinner("Scanning option chain..."):
+            try:
+                scanner = OptionChainScanner(kite_client_ref)
+                scanned = scanner.scan(
+                    spot       = spot,
+                    vix        = vix,
+                    sell_delta = params.get("sell_delta", 0.15),
+                    buy_delta  = params.get("buy_delta",  0.10),
+                    sl_pct     = params.get("sl_pct",     0.50),
+                    lot_size   = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE),
+                )
+                st.session_state._scanned_condor = scanned
+                st.success(
+                    f"Chain scanned — "
+                    f"CE {scanned['scan_meta']['ce_sell']['strike']} "
+                    f"({scanned['scan_meta']['ce_sell']['delta']:.2f}Δ)  |  "
+                    f"PE {scanned['scan_meta']['pe_sell']['strike']} "
+                    f"({scanned['scan_meta']['pe_sell']['delta']:.2f}Δ)"
+                )
+            except Exception as e:
+                scan_error = str(e)
+                st.warning(f"Chain scan failed — using ATR model. ({e})")
+                st.session_state._scanned_condor = None
+
+    # Use scanned condor if available, else fall back to ATR model
+    if st.session_state.get("_scanned_condor") and not scan_error:
+        condor = st.session_state._scanned_condor
+        expiry_raw = condor["scan_meta"]["expiry_date_raw"]
+        expiry = {
+            "expiry_date":     condor["scan_meta"]["expiry"],
+            "expiry_date_raw": expiry_raw,
+            "dte":             condor["scan_meta"]["dte"],
+            "week":            "NEXT",
+        }
+        # Show chain scan badge
+        st.markdown("""
+        <div style="display:inline-flex;align-items:center;gap:6px;
+                    background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);
+                    border-radius:4px;padding:4px 10px;margin-bottom:12px">
+            <span style="width:6px;height:6px;border-radius:50%;
+                         background:#22C55E;display:inline-block"></span>
+            <span style="font-size:10px;color:#22C55E;letter-spacing:0.1em;font-weight:500">
+                LIVE CHAIN · DELTA-SELECTED
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Show delta confirmation table
+        meta = condor["scan_meta"]
+        chain_rows = [
+            {"Leg": "CE SELL", "Strike": meta["ce_sell"]["strike"],
+             "Delta": f"{meta['ce_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['ce_sell']['ltp']:.1f}"},
+            {"Leg": "CE BUY",  "Strike": meta["ce_buy"]["strike"],
+             "Delta": f"{meta['ce_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['ce_buy']['ltp']:.1f}"},
+            {"Leg": "PE SELL", "Strike": meta["pe_sell"]["strike"],
+             "Delta": f"{meta['pe_sell']['delta']:.3f}Δ", "LTP": f"₹{meta['pe_sell']['ltp']:.1f}"},
+            {"Leg": "PE BUY",  "Strike": meta["pe_buy"]["strike"],
+             "Delta": f"{meta['pe_buy']['delta']:.3f}Δ",  "LTP": f"₹{meta['pe_buy']['ltp']:.1f}"},
+        ]
+        st.dataframe(
+            __import__("pandas").DataFrame(chain_rows),
+            use_container_width=True,
+            hide_index=True,
+            height=178,
+        )
+    else:
+        condor = strat.build_condor(spot, atr, vix, kite_client=kite_client_ref)
+        expiry = strat.get_next_week_expiry()
+
+    st.divider()
 
     col_l, col_r = st.columns([3, 2])
 
@@ -1042,16 +1142,34 @@ with tab2:
         be_u = condor.get("breakeven_upper", 0)
         be_d = condor.get("breakeven_lower", 0)
         dist = atr * params.get("atr_multiplier", 1.2)
+        current_lot_size = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+
+        # Lots input FIRST so summary can multiply correctly
+        if not st.session_state.kill_switch:
+            lots = st.number_input("Lots", value=1, min_value=1, max_value=20)
+        else:
+            lots = 1
+
+        # condor values:
+        #   nc  = net credit per unit (premium points)
+        #   mp  = max profit for 1 lot  (nc × lot_size)
+        #   ml  = max loss   for 1 lot  (wing_width - nc) × lot_size
+        # Scale to actual lots selected
+        nc_total = nc * lots * current_lot_size   # total rupee credit collected
+        mp_total = mp * lots                       # mp already has lot_size baked in
+        ml_total = ml * lots                       # same
+        margin   = condor.get("margin_required", 75000) * lots
 
         st.markdown(f"""
         <div class="panel">
-            <div class="panel-title">Summary</div>
+            <div class="panel-title">Summary · {lots} lot{"s" if lots > 1 else ""} × {current_lot_size}</div>
             <div class="leg-row"><span class="text-muted">NET CREDIT</span>
-                <span class="mono" style="color:#22C55E">₹{nc:.1f}</span></div>
+                <span class="mono" style="color:#22C55E">₹{nc_total:,.0f}
+                <span style="color:#4A5568;font-size:11px"> (₹{nc:.1f}/u)</span></span></div>
             <div class="leg-row"><span class="text-muted">MAX PROFIT</span>
-                <span class="mono" style="color:#22C55E">₹{mp:,.0f}</span></div>
+                <span class="mono" style="color:#22C55E">₹{mp_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">MAX LOSS</span>
-                <span class="mono" style="color:#EF4444">₹{ml:,.0f}</span></div>
+                <span class="mono" style="color:#EF4444">₹{ml_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">BREAKEVEN UP</span>
                 <span class="mono">{be_u:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">BREAKEVEN DN</span>
@@ -1059,7 +1177,7 @@ with tab2:
             <div class="leg-row"><span class="text-muted">PROFIT RANGE</span>
                 <span class="mono">{be_u - be_d:,.0f} pts</span></div>
             <div class="leg-row"><span class="text-muted">R / R</span>
-                <span class="mono">{ml/mp:.1f}x</span></div>
+                <span class="mono">{(ml_total/mp_total):.1f}x</span></div>
         </div>
         <div class="panel">
             <div class="panel-title">Expiry</div>
@@ -1084,7 +1202,6 @@ with tab2:
         """, unsafe_allow_html=True)
 
         if not st.session_state.kill_switch:
-            lots   = st.number_input("Lots", value=1, min_value=1, max_value=20)
             margin = condor.get("margin_required", 75000) * lots
             st.caption(f"Est. margin  ₹{margin:,.0f}")
 

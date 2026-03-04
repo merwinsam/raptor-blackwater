@@ -17,7 +17,8 @@ class IronCondorStrategy:
         self.sell_delta = self.params.get("sell_delta", config.SELL_DELTA)
         self.buy_delta = self.params.get("buy_delta", config.BUY_DELTA)
         self.sl_pct = self.params.get("sl_pct", config.SL_PCT)
-        self.lot_size = config.NIFTY_LOT_SIZE
+        # Use lot_size from params if provided (sidebar override), else config default
+        self.lot_size = int(self.params.get("lot_size", config.NIFTY_LOT_SIZE))
         self.strike_step = config.NIFTY_STRIKE_STEP
 
     def round_to_strike(self, price: float) -> int:
