@@ -39,63 +39,38 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* Floating sidebar open button — always visible bottom-left */
-#sidebar-open-btn {
-    position: fixed;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 99999;
-    background: #1D4ED8;
-    color: #fff;
-    border: none;
-    border-radius: 0 8px 8px 0;
-    width: 22px;
-    height: 56px;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    writing-mode: vertical-rl;
-    letter-spacing: 0.08em;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 9px;
-    font-weight: 600;
-    opacity: 0.85;
-    transition: opacity 0.2s, width 0.2s;
+/* ── Sidebar toggle arrow — force visible and styled ── */
+button[kind="header"] {
+    display: flex !important;
 }
-#sidebar-open-btn:hover { opacity: 1; width: 26px; }
-/* Hide button when sidebar is open */
-[data-testid="stSidebar"][aria-expanded="true"] ~ * #sidebar-open-btn { display: none; }
-</style>
-<button id="sidebar-open-btn" onclick="
-    const sidebar = window.parent.document.querySelector('[data-testid=stSidebar]');
-    const btn = window.parent.document.querySelector('[data-testid=collapsedControl]');
-    if (btn) btn.click();
-" title="Open sidebar">☰</button>
-<script>
-// Auto-hide button when sidebar is visible
-const checkSidebar = () => {
-    const sidebar = window.parent.document.querySelector('[data-testid=stSidebar]');
-    const btn = window.parent.document.getElementById('sidebar-open-btn');
-    if (!sidebar || !btn) return;
-    const expanded = sidebar.getAttribute('aria-expanded');
-    btn.style.display = (expanded === 'false' || !expanded) ? 'flex' : 'none';
-};
-setInterval(checkSidebar, 500);
-</script>
-<style>
-/* Also make Streamlit's own collapse arrow more visible */
 [data-testid="collapsedControl"] {
-    background: #1D4ED8 !important;
-    border-radius: 0 8px 8px 0 !important;
-    width: 20px !important;
-    min-height: 56px !important;
-    opacity: 1 !important;
-    visibility: visible !important;
+    display:         flex         !important;
+    visibility:      visible      !important;
+    opacity:         1            !important;
+    position:        fixed        !important;
+    top:             50vh         !important;
+    left:            0            !important;
+    z-index:         999999       !important;
+    width:           28px         !important;
+    height:          60px         !important;
+    background:      #1D4ED8      !important;
+    border-radius:   0 10px 10px 0 !important;
+    border:          none         !important;
+    cursor:          pointer      !important;
+    align-items:     center       !important;
+    justify-content: center       !important;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.4) !important;
+    transform:       translateY(-50%) !important;
 }
-[data-testid="collapsedControl"] svg { fill: white !important; }
+[data-testid="collapsedControl"] svg {
+    fill:   #ffffff !important;
+    width:  16px    !important;
+    height: 16px    !important;
+}
+[data-testid="collapsedControl"]:hover {
+    background: #2563EB !important;
+    width:      32px    !important;
+}
 </style>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
@@ -945,28 +920,6 @@ for pos in st.session_state.positions:
                     "status":  "CLOSED",
                 })
                 save_session(st.session_state.positions, st.session_state.trade_log, st.session_state.daily_pnl)
-
-# ── Top control bar — Kill Switch + connection status always visible ───────────
-_tb1, _tb2, _tb3, _tb4 = st.columns([4, 2, 2, 2])
-with _tb1:
-    pass  # spacer
-with _tb2:
-    kite_status = "🟢 CONNECTED" if st.session_state.get("kite_connected") else "🔴 DISCONNECTED"
-    st.caption(kite_status)
-with _tb3:
-    mode_lbl = "📄 PAPER" if st.session_state.paper_mode else "⚡ LIVE"
-    st.caption(mode_lbl)
-with _tb4:
-    if st.session_state.kill_switch:
-        if st.button("🔓 RESET KILL", type="primary", use_container_width=True):
-            st.session_state.kill_switch = False
-            st.rerun()
-    else:
-        if st.button("🔴 KILL", type="primary", use_container_width=True,
-                     help="Emergency: close all positions and halt trading"):
-            st.session_state.kill_switch = True
-            st.session_state.strategy_active = False
-            st.rerun()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs(["OVERVIEW", "STRATEGY", "POSITIONS", "LOG"])
