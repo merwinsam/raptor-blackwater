@@ -945,6 +945,9 @@ with tab2:
                 st.session_state._scanned_condor = None
 
     # ── Build strategy from scan or ATR model ────────────────────────────────
+    # Clear stale scan cache if not connected — avoids NoneType instrument errors
+    if not is_connected:
+        st.session_state._scanned_condor = None
     scanned      = st.session_state.get("_scanned_condor") if not scan_error else None
     current_lot_size = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
 
@@ -1570,26 +1573,13 @@ with tab5:
     st.divider()
     st.markdown('<p class="panel-title">Strategy</p>', unsafe_allow_html=True)
 
-    strike_mode = st.radio(
-        "Strike Selection Mode",
-        ["Delta", "ATR"],
-        horizontal=True,
-        help="Delta: pick strikes by target delta from live chain. ATR: sell at 1×ATR, hedge 200pts further OTM.",
-    )
-    st.session_state.strike_mode = strike_mode
-
-    atr_multiplier = st.number_input("ATR Multiplier",    value=1.25 if strike_mode == "ATR" else 1.2,
-                                      min_value=0.5, max_value=3.0, step=0.05,
-                                      help="ATR mode: sell strike = spot ± ATR × multiplier")
-    if strike_mode == "Delta":
-        sell_delta = st.number_input("Sell Delta", value=0.15, min_value=0.05, max_value=0.30, step=0.01)
-        buy_delta  = st.number_input("Buy Delta",  value=0.10, min_value=0.03, max_value=0.20, step=0.01)
-        hedge_pts  = None
-    else:
-        sell_delta = 0.15   # unused in ATR mode but kept for fallback
-        buy_delta  = 0.10
-        hedge_pts  = st.number_input("Hedge Distance (pts)", value=200, min_value=50, max_value=500, step=50,
-                                      help="ATR mode: buy (hedge) strike is this many points further OTM from sell strike")
+    strike_mode  = "Delta"
+    st.session_state.strike_mode = "Delta"
+    atr_multiplier = st.number_input("ATR Multiplier", value=1.2,
+                                      min_value=0.5, max_value=3.0, step=0.05)
+    sell_delta = st.number_input("Sell Delta", value=0.15, min_value=0.05, max_value=0.30, step=0.01)
+    buy_delta  = st.number_input("Buy Delta",  value=0.10, min_value=0.03, max_value=0.20, step=0.01)
+    hedge_pts  = 200
     sl_pct         = st.number_input("SL % of Premium",  value=50,   min_value=20,   max_value=100,  step=5)
     dte_target     = st.number_input("Target DTE",        value=14,   min_value=7,    max_value=30,   step=1)
     lot_size       = st.number_input("Lot Size",          value=config.NIFTY_LOT_SIZE, min_value=1, max_value=500, step=1,
