@@ -433,20 +433,6 @@ if not _check_login():
     st.stop()
 
 # ── Show logged-in user in sidebar ───────────────────────────────────────────
-if st.session_state.get("current_user"):
-    with st.sidebar:
-        st.markdown(f"""
-        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;
-                    letter-spacing:0.2em;color:#607888;margin-bottom:4px">PILOT</div>
-        <div style="font-family:'Share Tech Mono',monospace;font-size:12px;
-                    letter-spacing:0.1em;color:#E8A020;margin-bottom:8px">
-            {st.session_state.current_user.upper()}
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Sign Out", use_container_width=True):
-            for key in ["authenticated", "current_user"]:
-                st.session_state.pop(key, None)
-            st.rerun()
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 
@@ -1681,3 +1667,20 @@ with tab5:
         "strike_mode":    strike_mode,
         "hedge_pts":      hedge_pts if hedge_pts else 200,
     }
+
+    # ── Account / Sign Out ────────────────────────────────────────────────────
+    st.divider()
+    st.markdown('<p class="panel-title">Account</p>', unsafe_allow_html=True)
+    if st.session_state.get("current_user"):
+        st.markdown(f"""
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;
+                    letter-spacing:0.2em;color:#607888;margin-bottom:4px">PILOT</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;
+                    letter-spacing:0.1em;color:#E8A020;margin-bottom:12px">
+            {st.session_state.current_user.upper()}
+        </div>
+        """, unsafe_allow_html=True)
+    if st.button("Sign Out", use_container_width=True):
+        for key in ["authenticated", "current_user"]:
+            st.session_state.pop(key, None)
+        st.rerun()
