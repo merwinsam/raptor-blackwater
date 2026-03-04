@@ -631,6 +631,9 @@ with st.sidebar:
     st.session_state.execution_time = exec_time
     exit_dte  = st.number_input("Exit Days Before Expiry", value=4, min_value=1, max_value=10, step=1)
     st.session_state.exit_days_before_expiry = exit_dte
+    auto_lots = st.number_input("Auto Lots", value=1, min_value=1, max_value=20, step=1,
+                                 help="Number of lots for auto-execute at scheduled time")
+    st.session_state.auto_lots = auto_lots
     auto_arm  = st.toggle("Arm Auto-Execute", value=False)
     st.session_state.auto_execute_armed = auto_arm
 
@@ -751,21 +754,33 @@ params = st.session_state.strategy_params
 
 if st.session_state.auto_execute_armed and not st.session_state.kill_switch:
     if should_auto_execute():
-        atr_mdl = ATRModel()
-        spot    = st.session_state.spot_price
-        atr     = atr_mdl.compute_atr_from_vix(spot, st.session_state.vix)
-        strat   = IronCondorStrategy(params)
-        condor  = strat.build_condor(spot, atr, vix=st.session_state.vix, kite_client=st.session_state.get("kite_client"))
-        risk    = RiskEngine(params)
-        check   = risk.pre_trade_check(condor, 1, st.session_state.daily_pnl, account_size)
+        atr_mdl      = ATRModel()
+        spot         = st.session_state.spot_price
+        atr          = atr_mdl.compute_atr_from_vix(spot, st.session_state.vix)
+        auto_lots    = st.session_state.get("auto_lots", 1)
+        auto_lot_sz  = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+        params["lot_size"] = auto_lot_sz
+        strat        = IronCondorStrategy(params)
+
+        # Use scanned condor if available, else ATR model
+        if st.session_state.get("_scanned_condor"):
+            condor     = st.session_state["_scanned_condor"]
+            expiry_raw = condor["scan_meta"]["expiry_date_raw"]
+        else:
+            condor     = strat.build_condor(spot, atr, vix=st.session_state.vix,
+                                            kite_client=st.session_state.get("kite_client"))
+            expiry_raw = strat.get_next_week_expiry()["expiry_date_raw"]
+
+        risk  = RiskEngine(params)
+        check = risk.pre_trade_check(condor, auto_lots, st.session_state.daily_pnl, account_size)
         if check["approved"]:
             engine = OrderEngine(paper_mode=st.session_state.paper_mode)
-            result = engine.place_iron_condor(condor, 1)
+            result = engine.place_iron_condor(condor, auto_lots)
             if result["success"]:
-                expiry_raw = strat.get_next_week_expiry()["expiry_date_raw"]
                 for pos in result["positions"]:
                     pos["status"]          = "ACTIVE"
                     pos["expiry_date_raw"] = expiry_raw
+                    pos["lot_size"]        = auto_lot_sz
                 st.session_state.positions.extend(result["positions"])
                 st.session_state.last_execution_date = get_ist_now().date()
                 st.session_state.strategy_active     = True
@@ -773,7 +788,7 @@ if st.session_state.auto_execute_armed and not st.session_state.kill_switch:
                     "time":    datetime.now().strftime("%H:%M:%S"),
                     "date":    get_ist_now().date().isoformat(),
                     "action":  "AUTO ENTRY",
-                    "details": f"Iron Condor @ {exec_time} · Credit ₹{condor['net_credit']:.1f}",
+                    "details": f"Iron Condor @ {exec_time} · {auto_lots} lot(s) · Credit ₹{condor['net_credit']:.1f}",
                     "pnl":     0,
                     "status":  "FILLED",
                 })
