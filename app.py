@@ -510,14 +510,20 @@ if not st.session_state.get("_startup_done"):
         except Exception:
             pass
 
-    # Load today's session (positions + trade log)
-    # Skip if user explicitly started a new session (session_cleared flag set)
+    # Load today's session only — skip if cleared or from a previous date
     if not st.session_state.get("session_cleared"):
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        today_ist = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
         session = load_session()
-        if session and not st.session_state.positions:
-            st.session_state.positions  = session.get("positions", [])
-            st.session_state.trade_log  = session.get("trade_log", [])
-            st.session_state.daily_pnl  = session.get("daily_pnl", 0.0)
+        # Only restore if session is from TODAY and not empty
+        if (session
+                and session.get("date") == today_ist
+                and session.get("positions")
+                and not st.session_state.positions):
+            st.session_state.positions = session.get("positions", [])
+            st.session_state.trade_log = session.get("trade_log", [])
+            st.session_state.daily_pnl = session.get("daily_pnl", 0.0)
         # Load cumulative P&L
         st.session_state.total_pnl = total_pnl()
 
@@ -637,18 +643,29 @@ with st.sidebar:
     st.divider()
     st.markdown('<p class="panel-title">Session</p>', unsafe_allow_html=True)
     if st.button("New Session", use_container_width=True, help="Clear all positions, P&L and trade log for a fresh start"):
-        # Try to delete disk files (works locally; may be read-only on cloud)
+        # Overwrite disk files with blank data (works on Streamlit Cloud)
         try:
+            import json
             from pathlib import Path
+            from datetime import timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            today_ist = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
             logs_dir = Path("logs")
-            for f in logs_dir.glob("*_session.json"):
-                f.unlink(missing_ok=True)
-            pnl_file = logs_dir / "pnl_history.json"
-            if pnl_file.exists():
-                pnl_file.unlink()
+            logs_dir.mkdir(exist_ok=True)
+            # Overwrite today's session with empty data
+            blank_session = {"date": today_ist, "saved_at": "", "daily_pnl": 0.0, "positions": [], "trade_log": []}
+            with open(logs_dir / f"{today_ist}_session.json", "w") as f:
+                json.dump(blank_session, f)
+            # Overwrite pnl history with empty list
+            with open(logs_dir / "pnl_history.json", "w") as f:
+                json.dump([], f)
+            # Also wipe any older session files
+            for old_f in logs_dir.glob("*_session.json"):
+                if old_f.name != f"{today_ist}_session.json":
+                    old_f.unlink(missing_ok=True)
         except Exception:
             pass
-        # Always reset in-memory state — this is what matters on Streamlit Cloud
+        # Wipe all in-memory state
         keys_to_clear = [
             "positions", "trade_log", "daily_pnl", "total_pnl",
             "mtm_history", "strategy_active", "kill_switch",
