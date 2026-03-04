@@ -476,7 +476,20 @@ def init_session():
         "spot_price": 25000.0,
         "vix": 14.5,
         "atr": 0.0,
-        "strategy_params": {},
+        "strategy_params": {
+            "atr_multiplier": 1.2,
+            "sell_delta":     0.15,
+            "buy_delta":      0.10,
+            "sl_pct":         0.50,
+            "dte_target":     14,
+            "max_loss_pct":   0.05,
+            "max_loss_amt":   50_000,
+            "daily_kill_pct": 0.02,
+            "account_size":   1_000_000,
+            "lot_size":       config.NIFTY_LOT_SIZE,
+            "strike_mode":    "Delta",
+            "hedge_pts":      200,
+        },
         "order_log": [],
         "auto_execute_armed": False,
         "last_execution_date": None,
@@ -630,7 +643,12 @@ if st.session_state.kill_switch:
         st.rerun()
 
 # ── Auto-execute trigger ───────────────────────────────────────────────────────
-params = st.session_state.strategy_params
+params        = st.session_state.strategy_params
+account_size  = st.session_state.get("account_size", 1_000_000)
+lot_size      = st.session_state.get("lot_size", config.NIFTY_LOT_SIZE)
+strike_mode   = st.session_state.get("strike_mode", "Delta")
+max_loss_pct  = params.get("max_loss_pct", 0.05)
+max_loss_amt  = params.get("max_loss_amt", account_size * 0.05)
 
 if st.session_state.auto_execute_armed and not st.session_state.kill_switch:
     if should_auto_execute():
