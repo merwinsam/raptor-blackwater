@@ -30,7 +30,7 @@ except ImportError:
 
 st.set_page_config(
     page_title="Raptor by Blackwater",
-    page_icon="🦅",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -363,7 +363,7 @@ def _check_login():
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;
                     font-weight:500;letter-spacing:0.18em;color:#3B82F6;
                     margin-bottom:14px;text-transform:uppercase">
-            Blackwater Capital
+            Blackwater
         </div>
         <div style="font-family:'Inter',sans-serif;font-size:28px;font-weight:600;
                     color:#F1F5F9;letter-spacing:-0.02em;margin-bottom:6px">
