@@ -4,6 +4,7 @@ Professional Trading Dashboard | Zerodha Kite Connect
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
@@ -39,39 +40,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* ── Sidebar toggle arrow — force visible and styled ── */
-button[kind="header"] {
-    display: flex !important;
-}
-[data-testid="collapsedControl"] {
-    display:         flex         !important;
-    visibility:      visible      !important;
-    opacity:         1            !important;
-    position:        fixed        !important;
-    top:             50vh         !important;
-    left:            0            !important;
-    z-index:         999999       !important;
-    width:           28px         !important;
-    height:          60px         !important;
-    background:      #1D4ED8      !important;
-    border-radius:   0 10px 10px 0 !important;
-    border:          none         !important;
-    cursor:          pointer      !important;
-    align-items:     center       !important;
-    justify-content: center       !important;
-    box-shadow: 2px 0 8px rgba(0,0,0,0.4) !important;
-    transform:       translateY(-50%) !important;
-}
-[data-testid="collapsedControl"] svg {
-    fill:   #ffffff !important;
-    width:  16px    !important;
-    height: 16px    !important;
-}
-[data-testid="collapsedControl"]:hover {
-    background: #2563EB !important;
-    width:      32px    !important;
-}
-</style>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
 
@@ -527,6 +495,69 @@ init_session()
 
 # Force lot_size to config value — overrides stale cached values from old sessions
 st.session_state.lot_size = config.NIFTY_LOT_SIZE
+
+# ── Sidebar open button — works on Streamlit Cloud via parent DOM access ───────
+components.html("""
+<style>
+  #sb-btn {
+    position: fixed;
+    top: 50vh;
+    left: 0;
+    transform: translateY(-50%);
+    z-index: 9999999;
+    width: 24px;
+    height: 64px;
+    background: #1D4ED8;
+    border: none;
+    border-radius: 0 10px 10px 0;
+    cursor: pointer;
+    color: white;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 3px 0 10px rgba(0,0,0,0.5);
+    transition: width 0.15s;
+  }
+  #sb-btn:hover { width: 30px; background: #2563EB; }
+</style>
+<button id="sb-btn" title="Open sidebar">&#9776;</button>
+<script>
+  document.getElementById('sb-btn').addEventListener('click', function() {
+    // Try multiple selectors across Streamlit versions
+    const selectors = [
+      '[data-testid="collapsedControl"]',
+      'button[aria-label="Open sidebar"]',
+      'button[aria-label="open sidebar"]',
+      '[data-testid="stSidebarCollapsedControl"]',
+      'section[data-testid="stSidebar"] + div button',
+    ];
+    let clicked = false;
+    for (const sel of selectors) {
+      const btn = window.parent.document.querySelector(sel);
+      if (btn) { btn.click(); clicked = true; break; }
+    }
+    if (!clicked) {
+      // Last resort: find any button near left edge
+      const btns = window.parent.document.querySelectorAll('button');
+      for (const b of btns) {
+        const r = b.getBoundingClientRect();
+        if (r.left < 40 && r.width < 60) { b.click(); break; }
+      }
+    }
+  });
+
+  // Hide this button when sidebar is already open
+  function checkState() {
+    const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+    const btn = document.getElementById('sb-btn');
+    if (!sidebar || !btn) return;
+    const isOpen = sidebar.offsetWidth > 50;
+    btn.style.display = isOpen ? 'none' : 'flex';
+  }
+  setInterval(checkState, 400);
+</script>
+""", height=0, scrolling=False)
 
 # ── Auto-load token + session on startup ──────────────────────────────────────
 if not st.session_state.get("_startup_done"):
