@@ -62,10 +62,10 @@ class IronCondorStrategy:
         from datetime import date as date_type
         if isinstance(expiry_date, date_type):
             yy  = expiry_date.strftime("%y")   # "26"
-            m   = str(expiry_date.month)          # "3"  no leading zero
-            dd  = str(expiry_date.day)            # "10" no leading zero
-            return f"NIFTY{yy}{m}{dd}{strike}{option_type}"
-        return f"NIFTY{strike}{option_type}"
+            m   = str(expiry_date.month)
+            dd  = str(expiry_date.day)
+            return f"NIFTY{yy}{m}{dd}{int(strike)}{option_type}"
+        return f"NIFTY{int(strike)}{option_type}"
 
     def build_condor(self, spot: float, atr: float, vix: float = 14.5, dte: int = 14, kite_client=None) -> dict:
         """
@@ -87,7 +87,7 @@ class IronCondorStrategy:
         pe_buy_strike = self.round_to_strike(pe_sell_strike - hedge_pts)
 
         # ── Get premiums — real from Kite if available, else estimate
-        expiry_tmp = self.get_next_week_expiry()["expiry_date_raw"]
+        expiry_tmp = self.get_next_week_expiry(int(self.params.get("dte_target", 14)))["expiry_date_raw"]
         def _get_prem(strike, otype, delta_fallback):
             if kite_client:
                 try:
@@ -233,22 +233,22 @@ class IronCondorStrategy:
 
         return payoff
 
-    def get_next_week_expiry(self) -> dict:
+    def get_next_week_expiry(self, dte_target: int = 14) -> dict:
         """
-        Get appropriate weekly Tuesday expiry with ≥ 3 DTE.
-        NIFTY 50 weekly options expire on Tuesday (from Sept 2025).
-        Skips current week if expiry is too close (< 3 DTE).
+        Get Tuesday expiry closest to dte_target days from today.
+        dte_target=14 → ~2 weeks, dte_target=21 → ~3 weeks.
+        Always ≥ 3 DTE.
         """
         today           = date.today()
-        days_to_tuesday = (1 - today.weekday()) % 7
-        this_tuesday    = today + timedelta(days=days_to_tuesday)
-        # Skip if this week's expiry is too soon (< 3 DTE)
-        if (this_tuesday - today).days < 3:
-            this_tuesday += timedelta(weeks=1)
-        dte = (this_tuesday - today).days
+        days_to_tue     = (1 - today.weekday()) % 7
+        this_tue        = today + timedelta(days=days_to_tue)
+        tuesdays        = [this_tue + timedelta(weeks=i) for i in range(6)]
+        valid           = [t for t in tuesdays if (t - today).days >= 3]
+        best            = min(valid, key=lambda t: abs((t - today).days - dte_target))
+        dte             = (best - today).days
         return {
-            "expiry_date":     this_tuesday.strftime("%d %b %Y"),
-            "expiry_date_raw": this_tuesday,
+            "expiry_date":     best.strftime("%d %b %Y"),
+            "expiry_date_raw": best,
             "dte":             dte,
             "week":            "NEXT",
         }

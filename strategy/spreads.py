@@ -62,24 +62,31 @@ def _estimate_delta(spot, strike, opt_type, vix, dte, r=0.065):
 
 # ── Kite symbol helpers ───────────────────────────────────────────────────────
 
-def _kite_symbol(strike: int, option_type: str, expiry_date) -> str:
+def _kite_symbol(strike, option_type: str, expiry_date) -> str:
+    """Build Kite NFO symbol. Strike always cast to int to avoid '25600.0CE'."""
     yy = expiry_date.strftime("%y")
     m  = str(expiry_date.month)
     dd = str(expiry_date.day)
-    return f"NIFTY{yy}{m}{dd}{strike}{option_type}"
+    return f"NIFTY{yy}{m}{dd}{int(strike)}{option_type}"
 
 
-def _get_next_expiry() -> date:
+def _get_next_expiry(dte_target: int = 14) -> date:
     """
-    Get appropriate weekly Tuesday expiry (≥ 3 DTE).
-    Matches NSE behaviour: skip current week if expiry is too close.
+    Get the Tuesday expiry closest to dte_target days from today.
+    - If dte_target=14: pick the Tuesday ~2 weeks out
+    - If dte_target=21: pick the Tuesday ~3 weeks out
+    - Always ensures ≥ 3 DTE (skip if too close)
     """
     today       = date.today()
     days_to_tue = (1 - today.weekday()) % 7
     this_tue    = today + timedelta(days=days_to_tue)
-    if (this_tue - today).days < 3:
-        this_tue += timedelta(weeks=1)
-    return this_tue
+    # Build list of next 6 Tuesdays
+    tuesdays = [this_tue + timedelta(weeks=i) for i in range(6)]
+    # Filter to only those with ≥ 3 DTE
+    valid = [t for t in tuesdays if (t - today).days >= 3]
+    # Pick the one whose DTE is closest to dte_target
+    best = min(valid, key=lambda t: abs((t - today).days - dte_target))
+    return best
 
 
 def _expiry_dict(d: date) -> dict:
@@ -116,7 +123,7 @@ class BearCallSpread:
     def build(self, spot: float, atr: float, vix: float = 14.5,
               kite_client=None, chain_data: dict = None) -> dict:
 
-        expiry   = _get_next_expiry()
+        expiry   = _get_next_expiry(int(self.params.get("dte_target", 14)))
         expiry_d = _expiry_dict(expiry)
         dte      = expiry_d["dte"]
 
@@ -237,7 +244,7 @@ class BullPutSpread:
     def build(self, spot: float, atr: float, vix: float = 14.5,
               kite_client=None, chain_data: dict = None) -> dict:
 
-        expiry   = _get_next_expiry()
+        expiry   = _get_next_expiry(int(self.params.get("dte_target", 14)))
         expiry_d = _expiry_dict(expiry)
         dte      = expiry_d["dte"]
 

@@ -653,7 +653,7 @@ if st.session_state.auto_execute_armed and not st.session_state.kill_switch:
         else:
             condor     = strat.build_condor(spot, atr, vix=st.session_state.vix,
                                             kite_client=st.session_state.get("kite_client"))
-            expiry_raw = strat.get_next_week_expiry()["expiry_date_raw"]
+            expiry_raw = strat.get_next_week_expiry(int(params.get('dte_target', 14)))["expiry_date_raw"]
 
         risk  = RiskEngine(params)
         check = risk.pre_trade_check(condor, auto_lots, st.session_state.daily_pnl, account_size)
@@ -999,7 +999,7 @@ with tab2:
                      hide_index=True, height=140 if strategy_type != "Iron Condor" else 178)
 
     # ── Instantiate strategy ──────────────────────────────────────────────────
-    _base_expiry = strat.get_next_week_expiry()
+    _base_expiry = strat.get_next_week_expiry(int(params.get('dte_target', 14)))
     _scan_expiry = {
         "expiry_date":     scanned["scan_meta"]["expiry"]          if scanned else _base_expiry["expiry_date"],
         "expiry_date_raw": scanned["scan_meta"]["expiry_date_raw"] if scanned else _base_expiry["expiry_date_raw"],
@@ -1030,7 +1030,7 @@ with tab2:
                       "dte":             scanned["scan_meta"]["dte"]}
         else:
             trade  = strat.build_condor(spot, atr, vix, kite_client=kite_client_ref)
-            expiry = strat.get_next_week_expiry()
+            expiry = strat.get_next_week_expiry(int(params.get('dte_target', 14)))
         payoff_fn = strat.compute_payoff
 
     st.divider()
@@ -1039,7 +1039,39 @@ with tab2:
 
     with col_l:
         strikes = np.arange(spot - 2000, spot + 2000, 25)
-        payoff  = payoff_fn(strikes, trade)
+
+        # ── Use live positions if any are active, else use strategy preview ──
+        live_positions = [p for p in st.session_state.get("positions", [])
+                          if p.get("status") == "ACTIVE"]
+
+        if live_positions:
+            # Build payoff from actual open positions (entry prices already locked in)
+            def _live_payoff(price_range, positions):
+                import numpy as np
+                total = np.zeros(len(price_range))
+                for pos in positions:
+                    for leg in pos.get("legs", []):
+                        ls_  = leg.get("lot_size", current_lot_size)
+                        lots_ = leg.get("lots", 1)
+                        ep   = leg.get("premium", 0)   # entry price
+                        ot   = leg.get("option_type", "CE")
+                        act  = leg.get("action", "SELL")
+                        sk   = leg.get("strike", 0)
+                        if ot == "CE":
+                            intrinsic = np.maximum(price_range - sk, 0)
+                        else:
+                            intrinsic = np.maximum(sk - price_range, 0)
+                        leg_pnl = (ep - intrinsic) if act == "SELL" else (intrinsic - ep)
+                        total += leg_pnl * ls_ * lots_
+                return total
+
+            payoff      = _live_payoff(strikes, live_positions)
+            graph_title = f"Payoff at Expiry — LIVE ({len(live_positions)} position{'s' if len(live_positions)>1 else ''})"
+            graph_legs  = [leg for pos in live_positions for leg in pos.get("legs", [])]
+        else:
+            payoff      = payoff_fn(strikes, trade)
+            graph_title = f"Payoff at Expiry — {strategy_type} (preview)"
+            graph_legs  = trade["legs"]
 
         fig2 = go.Figure()
         pm = payoff >= 0
@@ -1058,7 +1090,7 @@ with tab2:
         fig2.add_vline(x=spot, line=dict(color="#4A5568", width=1, dash="dot"),
                        annotation_text=f"  {spot:,.0f}",
                        annotation_font=dict(color="#8A9BB0", size=10))
-        for leg in trade["legs"]:
+        for leg in graph_legs:
             c = "#EF4444" if leg["action"] == "SELL" else "#3B82F6"
             fig2.add_vline(x=leg["strike"], line=dict(color=c, width=1, dash="dot"), opacity=0.5)
         fig2.add_hline(y=0, line=dict(color="#1C2530", width=1))
@@ -1066,7 +1098,7 @@ with tab2:
             template="plotly_dark",
             paper_bgcolor="#0C1117", plot_bgcolor="#0C1117",
             height=260, margin=dict(l=0, r=0, t=30, b=0), showlegend=False,
-            title=dict(text=f"Payoff at Expiry — {strategy_type}",
+            title=dict(text=graph_title,
                        font=dict(family="IBM Plex Mono", size=11, color="#4A5568"), x=0),
             xaxis=dict(showgrid=False,
                        tickfont=dict(family="IBM Plex Mono", size=10, color="#4A5568")),
