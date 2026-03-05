@@ -1097,7 +1097,7 @@ with tab2:
         be_u = trade.get("breakeven_upper", 0)
         be_d = trade.get("breakeven_lower", 0)
         wing = trade.get("wing_width", 0)
-        mpl  = trade.get("margin_per_lot", wing * current_lot_size if wing else 0)
+        mpl  = trade.get("margin_per_lot", round(spot * current_lot_size * 0.03) if spot else 0)
 
         if not st.session_state.kill_switch:
             lots = st.number_input("Lots", value=1, min_value=1, max_value=20)
@@ -1155,7 +1155,7 @@ with tab2:
             <div class="leg-row"><span class="text-muted">TOTAL ({lots} lots)</span>
                 <span class="mono" style="color:#F59E0B">&#8377;{margin_total:,.0f}</span></div>
             <div class="leg-row"><span class="text-muted">BASIS</span>
-                <span class="mono" style="font-size:10px">Wing &times; Lot size (SPAN)</span></div>
+                <span class="mono" style="font-size:10px">3% of notional (SPAN est.)</span></div>
         </div>
         <div class="panel">
             <div class="panel-title">Expiry</div>

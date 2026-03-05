@@ -158,7 +158,9 @@ class BearCallSpread:
         ls     = self.lot_size
         mp     = round(nc * ls, 0)
         ml     = round((wing - nc) * ls, 0)
-        margin = round(wing * ls, 0)
+        # NSE SPAN margin for spread ≈ 3% of notional (spot × lot_size)
+        # Matches Zerodha observed margin of ₹45,000-55,000/lot for NIFTY spreads
+        margin = round(spot * ls * 0.03, 0)
         be     = ce_sell_s + nc
         ce_sl  = round(ce_sell_prem * (1 + self.sl_pct), 1)
         ce_tp  = round(ce_sell_prem * 0.5, 1)
@@ -274,7 +276,8 @@ class BullPutSpread:
         ls     = self.lot_size
         mp     = round(nc * ls, 0)
         ml     = round((wing - nc) * ls, 0)
-        margin = round(wing * ls, 0)
+        # NSE SPAN margin for spread ≈ 3% of notional (spot × lot_size)
+        margin = round(spot * ls * 0.03, 0)
         be     = pe_sell_s - nc
         pe_sl  = round(pe_sell_prem * (1 + self.sl_pct), 1)
         pe_tp  = round(pe_sell_prem * 0.5, 1)

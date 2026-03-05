@@ -132,8 +132,8 @@ class IronCondorStrategy:
         ce_sl = ce_sell_prem * (1 + self.sl_pct)
         pe_sl = pe_sell_prem * (1 + self.sl_pct)
 
-        # ── Margin (rough estimate: wing_width * lot_size)
-        margin_required = max(ce_wing_width, pe_wing_width) * self.lot_size
+        # ── Margin: NSE SPAN ≈ 3% of notional for hedged spread
+        margin_required = round(spot * self.lot_size * 0.03, 0)
 
         expiry = self.get_next_week_expiry()
 
@@ -200,8 +200,7 @@ class IronCondorStrategy:
             "breakeven_upper": round(breakeven_upper, 0),
             "breakeven_lower": round(breakeven_lower, 0),
             "margin_required": round(margin_required, 0),
-            # margin_per_lot = SPAN worst-case = max wing × lot_size
-            "margin_per_lot":  round(max(ce_wing_width, pe_wing_width) * self.lot_size, 0),
+            "margin_per_lot":  round(spot * self.lot_size * 0.03, 0),
             "wing_width":      max(ce_wing_width, pe_wing_width),
             "spot_at_entry":   spot,
             "atr":             atr,
