@@ -689,6 +689,11 @@ if kite_client_live and st.session_state.get("kite_connected"):
     active_live = [p for p in st.session_state.positions if p.get("status") == "ACTIVE"]
     if active_live:
         try:
+            import re as _re
+            # Sanitize float strikes before fetching (e.g. 25600.0CE → 25600CE)
+            for p in active_live:
+                if p.get("symbol"):
+                    p["symbol"] = _re.sub(r'(\d+)\.0+(CE|PE)', r'\1\2', p["symbol"])
             symbols = [f"NFO:{p['symbol']}" for p in active_live if p.get("symbol")]
             if symbols:
                 quotes = kite_client_live.ltp(symbols)
@@ -1328,12 +1333,21 @@ with tab3:
             st.markdown('<p class="panel-title">Live Prices</p>', unsafe_allow_html=True)
 
             # ── Live fetch via Kite (works in paper mode too) ──────────────────
+            def _sanitize_symbol(sym: str) -> str:
+                """Convert NIFTY2631025600.0CE → NIFTY2631025600CE"""
+                import re
+                return re.sub(r'(\d+)\.0+(CE|PE)', r'\1\2', sym)
+
             def fetch_live_ltps():
                 """Fetch real LTPs from Kite for all active positions."""
                 kite_client = st.session_state.get("kite_client")
                 if not kite_client or not st.session_state.kite_connected:
                     return False, "Not connected to Kite"
                 try:
+                    # Sanitize all symbols first (fix any float strikes)
+                    for pos in active_pos:
+                        if pos.get("symbol"):
+                            pos["symbol"] = _sanitize_symbol(pos["symbol"])
                     symbols = [f"NFO:{p['symbol']}" for p in active_pos if p.get("symbol")]
                     if not symbols:
                         return False, "No symbols to fetch"
@@ -1382,8 +1396,9 @@ with tab3:
                     fixed = 0
                     for pos in st.session_state.positions:
                         sym = pos.get("symbol", "")
-                        # Extract just the strike+type from end of any symbol format
-                        m2 = re.search(r"(\d{5,6})(CE|PE)$", sym)
+                        # Handle float strikes: NIFTY2631025600.0CE → NIFTY2631025600CE
+                        import re
+                        m2 = re.search(r"(\d+?)\.?\d*(CE|PE)$", sym)
                         if m2:
                             strike = m2.group(1)
                             otype  = m2.group(2)
